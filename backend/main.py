@@ -1,17 +1,21 @@
-"""
-KyaPehnu – FastAPI Backend
-Zero-infrastructure: in-memory JSON buffers only.
-No database, no ORM — vision runs from a cached global model.
-"""
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request
+from sqlalchemy.orm import Session
+import cloudinary
+import cloudinary.uploader
+from database import get_db, WardrobeItemDB, OutfitHistoryDB, engine, Base
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Union
 import os
 import uuid
+import random
+from datetime import datetime
+import base64
+import re
+from fastapi.staticfiles import StaticFiles
 
-# Load .env file manually to avoid new dependencies
+# Load .env manually
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 if os.path.exists(env_path):
     with open(env_path, "r") as f:
@@ -21,18 +25,16 @@ if os.path.exists(env_path):
                 k, v = line.split("=", 1)
                 os.environ[k] = v
 
-# Vision module: models are loaded ONCE at import time (module-level singletons)
-from vision import classify_image, detect_and_classify, detect_and_classify_v2, classify_image_v3, process_vision_pipeline
+from services.vision_service import process_vision_pipeline
 
-# ──────────────────────────────────────────────
-# PYDANTIC SCHEMAS  (single source of truth)
-# These keys MUST mirror TypeScript interfaces
-# ──────────────────────────────────────────────
+
+# Pydantic Schemas
 
 class WardrobeItem(BaseModel):
     id: str
     name: str
-    category: str          # "top" | "bottom" | "footwear" | "accessory" | "outfit"
+    category: str
+    sub_type: Optional[str] = None
     color: str
     brand: Optional[str] = None
     tags: List[str] = []
@@ -40,17 +42,39 @@ class WardrobeItem(BaseModel):
     occasions: List[str] = []
     image_url: Optional[str] = None
     is_favourite: bool = False
+    last_worn: Optional[str] = None
+
+class WearOutfitRequest(BaseModel):
+    top_item_id: str
+    bottom_item_id: str
+    occasion_text: str
+    weather_temp: float
+    season: str
+
+class OutfitHistoryRecord(BaseModel):
+    id: str
+    top_item_id: str
+    bottom_item_id: str
+    occasion_display: str
+    occasion_category: str
+    weather_temp: float
+    season: str
+    worn_date: str
+    created_at: str
+    top_item: Optional[WardrobeItem] = None
+    bottom_item: Optional[WardrobeItem] = None
 
 class OutfitSuggestion(BaseModel):
     id: str
-    occasion: str          # "casual" | "formal" | "party" | "sport"
+    occasion: str
     items: List[WardrobeItem]
-    confidence_score: float   # 0.0 – 1.0  (mock value)
+    confidence_score: float
     style_note: str
 
 class AddItemRequest(BaseModel):
     name: str
     category: str
+    sub_type: Optional[str] = None
     color: str
     brand: Optional[str] = None
     tags: List[str] = []
@@ -64,160 +88,48 @@ class HealthResponse(BaseModel):
     mode: str
 
 class VisionResult(BaseModel):
-    clothing_type: str   # "top" | "bottom" | "footwear" | "accessory" | "outfit"
-    sub_type:      str   # Fine-grained label — JSON metadata only, no DB column
-    hex_color:     str   # e.g. "#3a2f1c"
+    clothing_type: str
+    sub_type: str
+    hex_color: str
 
 class DetectedItemResult(BaseModel):
-    """One item from the multi-crop YOLO + ViT scan pipeline (v1 contract)."""
-    category:   str        # "top" | "bottom" | "footwear" | "accessory" | "outfit"
-    sub_type:   str        # e.g. "t-shirt", "shorts", "sneakers"
-    hex_color:  str        # "#rrggbb"
-    crop_b64:   str        # data:image/jpeg;base64,... (in-memory blob)
-    confidence: float      # YOLO confidence (1.0 for fallback)
-    box:        List[int]  # [x1, y1, x2, y2]
-    fallback:   bool       # True when YOLO found nothing
-    seasons:    List[str]  # e.g. ["summer", "monsoon"]
-    occasions:  List[str]  # e.g. ["casual", "festive"]
-
+    category: str
+    sub_type: str
+    hex_color: str
+    crop_b64: str
+    confidence: float
+    box: List[int]
+    fallback: bool
+    seasons: List[str]
+    occasions: List[str]
 
 class VisionResultV3(BaseModel):
-    """
-    Tri-Tier Validation Matrix — V3 JSON contract.
-    All values are in-memory runtime strings; zero DB columns are created or altered.
-    specific_type is stored in tags TEXT[] or meta JSON at persistence time.
-    """
-    clothing_type: str   # broad bucket: "top" | "bottom" | "footwear" | "accessory" | "outfit"
-    sub_category:  str   # Tier 1/2 resolved label e.g. "jeans", "shirt", "sneakers"
-    specific_type: str   # Tier 3 label e.g. "baggy", "formal_shirt", "high_top"; "" = general
-    hex_color:     str   # dominant colour e.g. "#222636"
-
+    clothing_type: str
+    sub_category: str
+    specific_type: str
+    hex_color: str
 
 class ScanResultItemV2(BaseModel):
-    """
-    V2 Integrity Contract — maps onto Neon PostgreSQL and Next.js grid.
-    All values are in-memory runtime strings; no DB columns are created or altered.
-    """
-    id:                        str        # uuid4 hex
-    category:                  str        # "Top" | "Bottom" | "Footwear" | "Accessory" | "Outfit"
-    sub_type:                  str        # e.g. "cargo", "shorts", "sneakers"
-    name:                      str        # e.g. "Blue Cargo Pants"
-    box_coordinates:           List[int]  # [x_min, y_min, x_max, y_max]
-    image_crop_blob_reference: str        # data:image/jpeg;base64,...
-    seasons:                   List[str]  # e.g. ["summer", "monsoon"]
-    occasions:                 List[str]  # e.g. ["casual", "festive"]
-
+    id: str
+    category: str
+    sub_type: str
+    name: str
+    box_coordinates: List[int]
+    image_crop_blob_reference: str
+    seasons: List[str]
+    occasions: List[str]
 
 class ConsolidatedVisionResponse(BaseModel):
-    """
-    Consolidated API Contract for all Vision responses.
-    Single route: /vision/analyze
-    """
     status: str
     message: str
     detected_items: List[ScanResultItemV2]
 
-# ──────────────────────────────────────────────
-# SIMULATED IN-MEMORY JSON BUFFER
-# Replace with real DB only when infrastructure
-# stage begins.
-# ──────────────────────────────────────────────
 
-WARDROBE_BUFFER: List[dict] = [
-    {
-        "id": "item-001",
-        "name": "White Oxford Shirt",
-        "category": "top",
-        "color": "white",
-        "brand": "Uniqlo",
-        "tags": ["formal", "classic", "office"],
-        "image_url": None,
-        "is_favourite": True,
-    },
-    {
-        "id": "item-002",
-        "name": "Slim Navy Chinos",
-        "category": "bottom",
-        "color": "navy",
-        "brand": "Zara",
-        "tags": ["smart-casual", "versatile"],
-        "image_url": None,
-        "is_favourite": False,
-    },
-    {
-        "id": "item-003",
-        "name": "White Leather Sneakers",
-        "category": "footwear",
-        "color": "white",
-        "brand": "Adidas",
-        "tags": ["casual", "everyday"],
-        "image_url": None,
-        "is_favourite": True,
-    },
-    {
-        "id": "item-004",
-        "name": "Grey Oversized Hoodie",
-        "category": "top",
-        "color": "grey",
-        "brand": "H&M",
-        "tags": ["casual", "cozy", "weekend"],
-        "image_url": None,
-        "is_favourite": False,
-    },
-    {
-        "id": "item-005",
-        "name": "Black Slim Jeans",
-        "category": "bottom",
-        "color": "black",
-        "brand": "Levi's",
-        "tags": ["casual", "night-out", "versatile"],
-        "image_url": None,
-        "is_favourite": True,
-    },
-    {
-        "id": "item-006",
-        "name": "Minimalist Watch",
-        "category": "accessory",
-        "color": "silver",
-        "brand": "Titan",
-        "tags": ["formal", "classic"],
-        "image_url": None,
-        "is_favourite": False,
-    },
-]
-
-# Static mock outfit suggestions (no ML required)
-OUTFIT_SUGGESTIONS_BUFFER: List[dict] = [
-    {
-        "id": "outfit-001",
-        "occasion": "casual",
-        "items": [WARDROBE_BUFFER[3], WARDROBE_BUFFER[4], WARDROBE_BUFFER[2]],
-        "confidence_score": 0.91,
-        "style_note": "Effortless weekend look. Hoodie + black jeans pairs with white sneakers for a clean contrast.",
-    },
-    {
-        "id": "outfit-002",
-        "occasion": "formal",
-        "items": [WARDROBE_BUFFER[0], WARDROBE_BUFFER[1], WARDROBE_BUFFER[5]],
-        "confidence_score": 0.95,
-        "style_note": "Classic office-ready ensemble. White Oxford with navy chinos is a timeless, polished combination.",
-    },
-    {
-        "id": "outfit-003",
-        "occasion": "party",
-        "items": [WARDROBE_BUFFER[0], WARDROBE_BUFFER[4], WARDROBE_BUFFER[2]],
-        "confidence_score": 0.82,
-        "style_note": "Elevated casual — white shirt tucked into black jeans with sneakers hits the right note for a relaxed night out.",
-    },
-]
-
-# ──────────────────────────────────────────────
-# APP INSTANCE
-# ──────────────────────────────────────────────
+# App
 
 app = FastAPI(
     title="KyaPehnu API",
-    description="Wardrobe intelligence — mock data stage",
+    description="Wardrobe intelligence",
     version="0.1.0",
 )
 
@@ -229,26 +141,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ──────────────────────────────────────────────
-# ROUTES
-# ──────────────────────────────────────────────
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/static/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+# Routes
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 def health_check():
-    """Ping endpoint to verify the server is reachable."""
-    return HealthResponse(
-        status="ok",
-        version="0.1.0",
-        mode="mock",
-    )
+    return HealthResponse(status="ok", version="0.1.0", mode="mock")
 
 
 @app.get("/vision/debug", tags=["Vision"])
 async def vision_debug():
-    """
-    Diagnostic endpoint — tests Gemini API connectivity and env setup.
-    Call this to see exactly why /vision/analyze is returning no_cloth_found.
-    """
     import urllib.request, urllib.error, os, json
     api_key = os.environ.get("GEMINI_API_KEY", "")
     result = {
@@ -279,90 +185,312 @@ async def vision_debug():
     return result
 
 
-@app.get("/wardrobe/items", response_model=List[WardrobeItem], tags=["Wardrobe"])
-def get_all_items():
-    """Return every item in the in-memory wardrobe buffer."""
-    return [WardrobeItem(**item) for item in WARDROBE_BUFFER]
+def get_current_user_id(x_user_id: Optional[str] = Header(None)):
+    return x_user_id
+
+@app.get("/api/wardrobe", response_model=List[WardrobeItem], tags=["Wardrobe"])
+def get_all_items(db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(WardrobeItemDB).filter(WardrobeItemDB.category.isnot(None))
+    if user_id:
+        query = query.filter(WardrobeItemDB.user_id == user_id)
+    items = query.order_by(WardrobeItemDB.created_at.desc()).all()
+    return [WardrobeItem(**{k: getattr(i, k) for k in WardrobeItem.model_fields.keys() if hasattr(i, k)}) for i in items]
 
 
-@app.get("/wardrobe/items/{item_id}", response_model=WardrobeItem, tags=["Wardrobe"])
-def get_item(item_id: str):
-    """Fetch a single wardrobe item by its ID."""
-    item = next((i for i in WARDROBE_BUFFER if i["id"] == item_id), None)
+@app.get("/api/wardrobe/{item_id}", response_model=WardrobeItem, tags=["Wardrobe"])
+def get_item(item_id: str, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == item_id)
+    if user_id:
+        query = query.filter(WardrobeItemDB.user_id == user_id)
+    item = query.first()
     if not item:
         raise HTTPException(status_code=404, detail=f"Item '{item_id}' not found.")
-    return WardrobeItem(**item)
+    return WardrobeItem(**{k: getattr(item, k) for k in WardrobeItem.model_fields.keys() if hasattr(item, k)})
 
+class ItemEditModel(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    sub_type: Optional[str] = None
+    color: Optional[str] = None
+    brand: Optional[str] = None
 
-@app.post("/wardrobe/items", response_model=WardrobeItem, status_code=201, tags=["Wardrobe"])
-def add_item(payload: AddItemRequest):
-    """Add a new clothing item to the in-memory buffer."""
-    new_item = {
-        "id": f"item-{uuid.uuid4().hex[:6]}",
-        "name": payload.name,
-        "category": payload.category,
-        "color": payload.color,
-        "brand": payload.brand,
-        "tags": payload.tags,
-        "image_url": payload.image_url,
-        "is_favourite": False,
-    }
-    WARDROBE_BUFFER.append(new_item)
-    return WardrobeItem(**new_item)
-
-
-@app.delete("/wardrobe/items/{item_id}", tags=["Wardrobe"])
-def delete_item(item_id: str):
-    """Remove an item from the in-memory buffer by ID."""
-    global WARDROBE_BUFFER
-    original_len = len(WARDROBE_BUFFER)
-    WARDROBE_BUFFER = [i for i in WARDROBE_BUFFER if i["id"] != item_id]
-    if len(WARDROBE_BUFFER) == original_len:
+@app.put("/api/wardrobe/{item_id}", response_model=WardrobeItem, tags=["Wardrobe"])
+def update_item(item_id: str, item_data: ItemEditModel, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == item_id)
+    if user_id:
+        query = query.filter((WardrobeItemDB.user_id == user_id) | (WardrobeItemDB.user_id.is_(None)))
+    item = query.first()
+    if not item:
         raise HTTPException(status_code=404, detail=f"Item '{item_id}' not found.")
+    update_data = item_data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return WardrobeItem(**{k: getattr(item, k) for k in WardrobeItem.model_fields.keys() if hasattr(item, k)})
+
+
+@app.post("/api/wardrobe/add", response_model=WardrobeItem, status_code=201, tags=["Wardrobe"])
+def add_item(payload: AddItemRequest, request: Request, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    mapped_sub_type = payload.sub_type or getattr(payload, "type", None)
+    if not mapped_sub_type:
+        cat = payload.category.lower() if payload.category else ""
+        if cat == "top":
+            mapped_sub_type = "Shirt/T-Shirt"
+        elif cat == "bottom":
+            mapped_sub_type = "Pants/Jeans"
+        else:
+            mapped_sub_type = "T-Shirt"
+
+    if not payload.category:
+        raise HTTPException(status_code=400, detail="category cannot be null")
+
+    final_image_url = payload.image_url
+    if final_image_url and final_image_url.startswith("data:image"):
+        cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+        api_key = os.environ.get("CLOUDINARY_API_KEY")
+        api_secret = os.environ.get("CLOUDINARY_API_SECRET")
+
+        if cloud_name and api_key and api_secret:
+            try:
+                cloudinary.config(
+                    cloud_name=cloud_name,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    secure=True
+                )
+                upload_result = cloudinary.uploader.upload(final_image_url, folder="kyapehnu")
+                final_image_url = upload_result.get("secure_url")
+            except Exception as e:
+                print(f"Cloudinary upload failed: {e}")
+                raise HTTPException(status_code=500, detail="Image upload to Cloudinary failed.")
+        else:
+            try:
+                match = re.match(r'data:image/(?P<ext>\w+);base64,(?P<data>.*)', final_image_url)
+                if match:
+                    ext = match.group('ext')
+                    if ext not in ['jpeg', 'jpg', 'png', 'webp']:
+                        ext = 'jpg'
+                    b64_data = match.group('data')
+                    image_data = base64.b64decode(b64_data)
+                    filename = f"img_{uuid.uuid4().hex[:10]}.{ext}"
+                    file_path = os.path.join(UPLOAD_DIR, filename)
+                    with open(file_path, "wb") as f:
+                        f.write(image_data)
+                    base_url = str(request.base_url).rstrip("/")
+                    final_image_url = f"{base_url}/static/uploads/{filename}"
+            except Exception as e:
+                print(f"Error saving local image: {e}")
+                pass
+
+    now_iso = datetime.utcnow().isoformat()
+    new_item = WardrobeItemDB(
+        id=f"item-{uuid.uuid4().hex[:6]}",
+        name=payload.name,
+        category=payload.category,
+        sub_type=mapped_sub_type,
+        color=payload.color,
+        brand=payload.brand,
+        tags=payload.tags,
+        seasons=payload.seasons,
+        occasions=payload.occasions,
+        image_url=final_image_url,
+        is_favourite=False,
+        created_at=now_iso,
+        user_id=user_id,
+    )
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+    return WardrobeItem(**{k: getattr(new_item, k) for k in WardrobeItem.model_fields.keys() if hasattr(new_item, k)})
+
+
+@app.delete("/api/wardrobe/{item_id}", tags=["Wardrobe"])
+def delete_item(item_id: str, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == item_id)
+    if user_id:
+        query = query.filter(WardrobeItemDB.user_id == user_id)
+    item = query.first()
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Item '{item_id}' not found.")
+    db.delete(item)
+    db.commit()
     return {"deleted": item_id}
 
 
 @app.get("/outfits/suggestions", response_model=List[OutfitSuggestion], tags=["Outfits"])
-def get_outfit_suggestions(occasion: Optional[str] = None):
-    """
-    Return mock outfit suggestions.
-    Optionally filter by occasion: casual | formal | party | sport
-    """
-    results = OUTFIT_SUGGESTIONS_BUFFER
+def get_outfit_suggestions(occasion: Optional[str] = None, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(WardrobeItemDB).filter(WardrobeItemDB.category.isnot(None))
+    if user_id:
+        query = query.filter(WardrobeItemDB.user_id == user_id)
+    db_items = query.all()
+    items = [WardrobeItem(**{k: getattr(i, k) for k in WardrobeItem.model_fields.keys() if hasattr(i, k)}) for i in db_items]
+
+    tops = [item for item in items if item.category.lower() in ["top", "tops", "topwear", "t-shirt", "shirt"]]
+    bottoms = [item for item in items if item.category.lower() in ["bottom", "bottoms", "bottomwear", "pants", "jeans", "trousers"]]
+    footwear = [item for item in items if item.category.lower() in ["footwear", "shoes", "sneakers", "accessory"]]
+
+    if not tops or not bottoms:
+        return []
+
     if occasion:
-        results = [o for o in results if o["occasion"] == occasion]
-    return [OutfitSuggestion(**o) for o in results]
+        occasion_lower = occasion.lower()
+        def filter_occ(lst):
+            filtered = [i for i in lst if any(occasion_lower in occ.lower() for occ in i.occasions)]
+            return filtered if filtered else lst
+        tops = filter_occ(tops)
+        bottoms = filter_occ(bottoms)
+        footwear = filter_occ(footwear) if footwear else []
+
+    suggestions = []
+    neutrals = ["black", "white", "grey", "gray", "navy", "beige", "brown", "cream"]
+    random.shuffle(tops)
+    random.shuffle(bottoms)
+
+    for _ in range(min(15, len(tops) * len(bottoms))):
+        top = random.choice(tops)
+        bottom = random.choice(bottoms)
+        shoes = random.choice(footwear) if footwear else None
+
+        is_top_neutral = any(n in top.color.lower() for n in neutrals)
+        is_bottom_neutral = any(n in bottom.color.lower() for n in neutrals)
+
+        if is_top_neutral and is_bottom_neutral:
+            score = round(random.uniform(0.92, 0.98), 2)
+            note = "Classic neutral combo, highly versatile and safe."
+        elif is_top_neutral or is_bottom_neutral:
+            score = round(random.uniform(0.88, 0.95), 2)
+            note = "Great balance! A pop of color anchored by a neutral piece."
+        else:
+            if top.color.lower() == bottom.color.lower():
+                score = round(random.uniform(0.85, 0.90), 2)
+                note = "Monochrome look. Bold and stylish."
+            else:
+                score = round(random.uniform(0.80, 0.88), 2)
+                note = "Vibrant color blocking combo. Perfect for standing out."
+
+        outfit_items = [top, bottom]
+        if shoes:
+            outfit_items.append(shoes)
+
+        top_occs = set(occ.lower() for occ in top.occasions)
+        bot_occs = set(occ.lower() for occ in bottom.occasions)
+        shared_occs = top_occs.intersection(bot_occs)
+
+        if occasion:
+            final_occasion = occasion
+        elif shared_occs:
+            final_occasion = list(shared_occs)[0]
+        else:
+            final_occasion = "casual"
+
+        suggestions.append(OutfitSuggestion(
+            id=f"outfit-{uuid.uuid4().hex[:6]}",
+            occasion=final_occasion,
+            items=outfit_items,
+            confidence_score=score,
+            style_note=note
+        ))
+
+    unique_suggestions = []
+    seen = set()
+    for sug in suggestions:
+        combo_key = tuple(sorted([item.id for item in sug.items]))
+        if combo_key not in seen:
+            seen.add(combo_key)
+            unique_suggestions.append(sug)
+        if len(unique_suggestions) >= 5:
+            break
+
+    unique_suggestions.sort(key=lambda x: x.confidence_score, reverse=True)
+    return unique_suggestions
 
 
 @app.get("/outfits/suggestions/{outfit_id}", response_model=OutfitSuggestion, tags=["Outfits"])
 def get_outfit_by_id(outfit_id: str):
-    """Fetch a single outfit suggestion by ID."""
-    outfit = next((o for o in OUTFIT_SUGGESTIONS_BUFFER if o["id"] == outfit_id), None)
-    if not outfit:
-        raise HTTPException(status_code=404, detail=f"Outfit '{outfit_id}' not found.")
-    return OutfitSuggestion(**outfit)
+    raise HTTPException(status_code=404, detail=f"Outfit '{outfit_id}' not found.")
 
 
-# ──────────────────────────────────────────────
-# VISION ROUTE
-# Model is NOT reloaded here — vision.py exposes
-# classify_image() which uses the cached _CLASSIFIER.
-# ──────────────────────────────────────────────
+@app.post("/outfits/wear", status_code=201, tags=["Outfits"])
+def log_outfit_wear(payload: WearOutfitRequest, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    text_lower = payload.occasion_text.lower()
+    cat = "casual"
+    if any(x in text_lower for x in ["office", "work", "meeting", "formal"]):
+        cat = "office"
+    elif any(x in text_lower for x in ["party", "club", "night", "date"]):
+        cat = "party"
+    elif any(x in text_lower for x in ["festive", "wedding", "traditional", "pooja"]):
+        cat = "festive"
+    elif any(x in text_lower for x in ["college", "class", "uni"]):
+        cat = "college"
+    elif any(x in text_lower for x in ["gym", "sport", "workout", "trek", "run"]):
+        cat = "sport"
+
+    now_iso = datetime.utcnow().isoformat()
+    record_id = f"hist-{uuid.uuid4().hex[:8]}"
+
+    top_item_db = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == payload.top_item_id).first()
+    bottom_item_db = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == payload.bottom_item_id).first()
+
+    record_db = OutfitHistoryDB(
+        id=record_id,
+        top_item_id=payload.top_item_id,
+        bottom_item_id=payload.bottom_item_id,
+        occasion_display=payload.occasion_text,
+        occasion_category=cat,
+        weather_temp=payload.weather_temp,
+        season=payload.season,
+        worn_date=now_iso[:10],
+        created_at=now_iso,
+        user_id=user_id,
+    )
+    db.add(record_db)
+
+    if top_item_db:
+        top_item_db.last_worn = now_iso
+    if bottom_item_db:
+        bottom_item_db.last_worn = now_iso
+
+    db.commit()
+    return {"message": "Outfit logged successfully"}
+
+@app.get("/outfits/history", response_model=List[OutfitHistoryRecord], tags=["Outfits"])
+def get_outfit_history(db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(OutfitHistoryDB)
+    if user_id:
+        query = query.filter(OutfitHistoryDB.user_id == user_id)
+    hist_records = query.order_by(OutfitHistoryDB.created_at.desc()).all()
+    results = []
+    for hist in hist_records:
+        top_db = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == hist.top_item_id).first()
+        bot_db = db.query(WardrobeItemDB).filter(WardrobeItemDB.id == hist.bottom_item_id).first()
+        hist_dict = {k: getattr(hist, k) for k in OutfitHistoryRecord.model_fields.keys() if hasattr(hist, k) and getattr(hist, k) is not None}
+        if top_db:
+            hist_dict["top_item"] = {k: getattr(top_db, k) for k in WardrobeItem.model_fields.keys() if hasattr(top_db, k)}
+        if bot_db:
+            hist_dict["bottom_item"] = {k: getattr(bot_db, k) for k in WardrobeItem.model_fields.keys() if hasattr(bot_db, k)}
+        results.append(OutfitHistoryRecord(**hist_dict))
+    return results
+
+@app.delete("/outfits/history/{record_id}", tags=["Outfits"])
+def delete_outfit_history(record_id: str, db: Session = Depends(get_db), user_id: Optional[str] = Depends(get_current_user_id)):
+    query = db.query(OutfitHistoryDB).filter(OutfitHistoryDB.id == record_id)
+    if user_id:
+        query = query.filter(OutfitHistoryDB.user_id == user_id)
+    record = query.first()
+    if not record:
+        raise HTTPException(status_code=404, detail=f"History record '{record_id}' not found.")
+    db.delete(record)
+    db.commit()
+    return {"deleted": record_id}
+
+
+# Vision Route
 
 @app.post("/vision/analyze", response_model=ConsolidatedVisionResponse, tags=["Vision"])
 async def analyze_clothing_image(
     file: UploadFile = File(..., description="JPEG or PNG image of a clothing item or outfit"),
 ) -> ConsolidatedVisionResponse:
-    """
-    **Consolidated Vision Analysis Endpoint**
-
-    Handles both Single Object Scanning and Multi-Garment Detection on a single route.
-    Runs the full YOLOv8 + ViT tri-tier pipeline and returns a consolidated array
-    of all detected garments.
-
-    If no clothing is found (0 detected garments), returns HTTP 200 with error status,
-    flushing internal memory buffers and preventing DB contamination.
-    """
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(
             status_code=415,
@@ -374,12 +502,9 @@ async def analyze_clothing_image(
         raise HTTPException(status_code=400, detail="Empty file received.")
 
     try:
-        # ── Consolidated Single-Endpoint Multi-Detection Contract ──
-        # Async Parallel Ingestion & Color Extraction
         result = await process_vision_pipeline(image_bytes)
         del image_bytes
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Vision pipeline failed: {exc}")
 
-    # Zero-Tolerance Environment Rejection Block (no_cloth_found)
     return result

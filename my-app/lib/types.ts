@@ -9,7 +9,8 @@
 export interface WardrobeItem {
   id: string;
   name: string;
-  category: "top" | "bottom" | "footwear" | "accessory" | "outfit";
+  category: "top" | "bottom" | "footwear" | "accessory" | "outfit" | string;
+  sub_type?: string | null;
   color: string;
   brand: string | null;
   tags: string[];
@@ -17,6 +18,7 @@ export interface WardrobeItem {
   occasions: string[];
   image_url: string | null;
   is_favourite: boolean;
+  last_worn?: string | null;
 }
 
 // ── Mirrors: OutfitSuggestion ────────────────────────────────────────────────
@@ -26,6 +28,30 @@ export interface OutfitSuggestion {
   items: WardrobeItem[];
   confidence_score: number;  // 0.0 – 1.0
   style_note: string;
+}
+
+// ── Mirrors: WearOutfitRequest ────────────────────────────────────────────────
+export interface WearOutfitRequest {
+  top_item_id: string;
+  bottom_item_id: string;
+  occasion_text: string;
+  weather_temp: number;
+  season: string;
+}
+
+// ── Mirrors: OutfitHistoryRecord ──────────────────────────────────────────────
+export interface OutfitHistoryRecord {
+  id: string;
+  top_item_id: string;
+  bottom_item_id: string;
+  occasion_display: string;
+  occasion_category: string;
+  weather_temp: number;
+  season: string;
+  worn_date: string;
+  created_at: string;
+  top_item?: WardrobeItem | null;
+  bottom_item?: WardrobeItem | null;
 }
 
 // ── Mirrors: HealthResponse ──────────────────────────────────────────────────
@@ -39,6 +65,7 @@ export interface HealthResponse {
 export interface AddItemRequest {
   name: string;
   category: string;
+  sub_type?: string | null;
   color: string;
   brand?: string | null;
   tags?: string[];
@@ -76,7 +103,7 @@ export interface VisionResultV3 {
 export interface ConsolidatedVisionResponse {
   status: "success" | "error";
   message: string;
-  items: ScanResultItemV2[];
+  detected_items: ScanResultItemV2[];
 }
 
 // ── Type guard helper ──────────────────────────────────────────────────────────
