@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import Image from "next/image";
 import type { WardrobeItem } from "../../lib/types";
 import { type WeatherPayload, tagAffinityScore } from "../../lib/weather";
-import { Trash2 } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { CATEGORY_COLORS, getNearestColorName, Skeleton } from "./SharedComponents";
 
 // ── ItemCard ─────────────────────────────────────────────────────────────────
@@ -12,25 +12,40 @@ export function ItemCard({
   onSelect,
   selectedId,
   onDelete,
+  // Outfit builder mode props
+  outfitBuilderMode = false,
+  outfitSelected = false,
+  onOutfitToggle,
 }: {
   item: WardrobeItem;
   index: number;
   onSelect: (item: WardrobeItem) => void;
   selectedId: string | null;
   onDelete: (item: WardrobeItem) => void;
+  outfitBuilderMode?: boolean;
+  outfitSelected?: boolean;
+  onOutfitToggle?: (item: WardrobeItem) => void;
 }) {
   const catColor = CATEGORY_COLORS[item.category] ?? "#8b8b9a";
   const isSelected = selectedId === item.id;
+
+  const handleClick = () => {
+    if (outfitBuilderMode && onOutfitToggle) {
+      onOutfitToggle(item);
+    } else {
+      onSelect(item);
+    }
+  };
 
   return (
     <div
       role="button"
       tabIndex={0}
-      aria-pressed={isSelected}
+      aria-pressed={outfitBuilderMode ? outfitSelected : isSelected}
       aria-label={`Select ${item.name}`}
-      onClick={() => onSelect(item)}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(item)}
-      className={`card-interactive animate-enter stagger-${Math.min(index + 1, 6)} bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md border border-zinc-200/50 dark:border-zinc-800/50 group`}
+      onClick={handleClick}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleClick()}
+      className={`card-interactive animate-enter stagger-${Math.min(index + 1, 6)} bg-[#0c0c0f]/80 backdrop-blur-md border border-white/5 group`}
       style={{
         position: "relative",
         display: "flex",
@@ -38,15 +53,33 @@ export function ItemCard({
         borderRadius: 16,
         overflow: "hidden",
         padding: 0,
-        ...(isSelected
-          ? {
-            borderColor: "var(--cyan)",
-            boxShadow: "0 0 0 2px var(--cyan), 0 0 28px var(--cyan-glow)",
-          }
+        transition: "box-shadow 0.2s, border-color 0.2s",
+        ...(outfitBuilderMode && outfitSelected
+          ? { borderColor: "#a78bfa", boxShadow: "0 0 0 2px #a78bfa, 0 0 24px rgba(167,139,250,0.35)" }
+          : !outfitBuilderMode && isSelected
+          ? { borderColor: "var(--cyan)", boxShadow: "0 0 0 2px var(--cyan), 0 0 28px var(--cyan-glow)" }
           : {}),
       }}
     >
-      {isSelected && (
+      {/* Outfit builder checkmark */}
+      {outfitBuilderMode && outfitSelected && (
+        <div
+          style={{
+            position: "absolute", top: 10, right: 10,
+            width: 26, height: 26, borderRadius: "50%",
+            background: "#a78bfa", display: "flex",
+            alignItems: "center", justifyContent: "center",
+            zIndex: 3, boxShadow: "0 2px 8px rgba(167,139,250,0.5)",
+            pointerEvents: "none",
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0c0c0f" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+      )}
+      {/* Normal selected ribbon */}
+      {!outfitBuilderMode && isSelected && (
         <div
           style={{
             position: "absolute",
@@ -114,50 +147,6 @@ export function ItemCard({
           <Trash2 size={15} strokeWidth={2.5} />
         </button>
 
-        <div
-          className="transition-opacity duration-200 group-hover:opacity-0"
-          style={{
-            position: "absolute",
-            top: 12,
-            right: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            background: "rgba(0,0,0,0.45)",
-            padding: "4px 8px",
-            borderRadius: 99,
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            zIndex: 10
-          }}
-        >
-          <span
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: item.color,
-              border: "1px solid rgba(255,255,255,0.3)",
-              display: "inline-block",
-              boxShadow: `0 0 8px ${item.color}88`,
-              flexShrink: 0,
-            }}
-          />
-          {item.color && (
-            <span
-              style={{
-                fontSize: "0.62rem",
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.9)",
-                letterSpacing: "0.04em",
-                textTransform: "capitalize",
-              }}
-            >
-              {getNearestColorName(item.color)}
-            </span>
-          )}
-        </div>
       </div>
 
       <div
@@ -501,6 +490,12 @@ export function WardrobeGrid({
   selectedId,
   onSelect,
   onDelete,
+  // Outfit builder mode
+  outfitBuilderMode = false,
+  outfitSelectedIds = [],
+  onOutfitToggle,
+  onOutfitConfirm,
+  onOutfitCancel,
 }: {
   items: WardrobeItem[];
   itemsLoading: boolean;
@@ -509,6 +504,11 @@ export function WardrobeGrid({
   selectedId: string | null;
   onSelect: (item: WardrobeItem) => void;
   onDelete: (item: WardrobeItem) => void;
+  outfitBuilderMode?: boolean;
+  outfitSelectedIds?: string[];
+  onOutfitToggle?: (item: WardrobeItem) => void;
+  onOutfitConfirm?: (selectedItems: WardrobeItem[]) => void;
+  onOutfitCancel?: () => void;
 }) {
   const [activeSeasons, setActiveSeasons] = useState<Set<string>>(new Set());
   const [activeOccasions, setActiveOccasions] = useState<Set<string>>(new Set());
@@ -564,8 +564,44 @@ export function WardrobeGrid({
     return seasonOk && occasionOk && searchOk;
   });
 
+  const outfitSelectedItems = items.filter(i => outfitSelectedIds.includes(i.id));
+
   return (
     <>
+      {/* ── Outfit Builder Banner ── */}
+      {outfitBuilderMode && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", borderRadius: 14, marginBottom: 20,
+          background: "linear-gradient(135deg, rgba(167,139,250,0.12) 0%, rgba(96,165,250,0.08) 100%)",
+          border: "1px solid rgba(167,139,250,0.35)",
+          boxShadow: "0 0 20px rgba(167,139,250,0.08)",
+          gap: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "1.2rem" }}>✨</span>
+            <div>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: "0.88rem", color: "#c4b5fd" }}>
+                Building Custom Outfit
+              </p>
+              <p style={{ margin: 0, fontSize: "0.74rem", color: "var(--text-muted)", marginTop: 2 }}>
+                Tap any items below — tops, dresses, bottoms, footwear, anything!
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onOutfitCancel}
+            style={{
+              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 8, padding: "6px 12px", color: "var(--text-muted)",
+              fontSize: "0.78rem", fontWeight: 600, cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            ✕ Cancel
+          </button>
+        </div>
+      )}
+
       <FilterPanel
         activeSeasons={activeSeasons}
         activeOccasions={activeOccasions}
@@ -671,9 +707,90 @@ export function WardrobeGrid({
                 onSelect={onSelect}
                 selectedId={selectedId}
                 onDelete={onDelete}
+                outfitBuilderMode={outfitBuilderMode}
+                outfitSelected={outfitSelectedIds.includes(item.id)}
+                onOutfitToggle={onOutfitToggle}
               />
             ))}
       </div>
+
+      {/* ── Floating Outfit Builder Tray ── */}
+      {outfitBuilderMode && (
+        <div
+          style={{
+            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+            zIndex: 50, width: "min(640px, calc(100vw - 32px))",
+            background: "rgba(15,15,20,0.92)", backdropFilter: "blur(20px)",
+            border: "1px solid rgba(167,139,250,0.4)",
+            borderRadius: 20, padding: "14px 18px",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(167,139,250,0.2)",
+            display: "flex", alignItems: "center", gap: 14,
+          }}
+        >
+          {/* Selected item thumbnails */}
+          <div style={{ display: "flex", gap: 8, flex: 1, overflowX: "auto", paddingBottom: 2 }}>
+            {outfitSelectedItems.length === 0 ? (
+              <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                Tap items above to add them…
+              </p>
+            ) : (
+              outfitSelectedItems.map(item => (
+                <div
+                  key={item.id}
+                  className="group"
+                  style={{
+                    width: 48, height: 58, borderRadius: 10, overflow: "hidden", flexShrink: 0,
+                    border: "1px solid rgba(167,139,250,0.4)",
+                    background: item.color
+                      ? `linear-gradient(135deg, ${item.color}88, ${item.color}33)`
+                      : "rgba(255,255,255,0.05)",
+                    position: "relative",
+                    cursor: "pointer",
+                  }}
+                  title={`Remove ${item.name}`}
+                  onClick={() => onOutfitToggle?.(item)}
+                >
+                  {item.image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.image_url}
+                      alt={item.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  )}
+                  {/* Hover Overlay */}
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <X size={18} color="#fff" />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Create Outfit button */}
+          <button
+            disabled={outfitSelectedItems.length < 1}
+            onClick={() => onOutfitConfirm?.(outfitSelectedItems)}
+            style={{
+              flexShrink: 0,
+              padding: "10px 20px", borderRadius: 12, border: "none",
+              background: outfitSelectedItems.length >= 1
+                ? "linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)"
+                : "rgba(255,255,255,0.08)",
+              color: outfitSelectedItems.length >= 1 ? "#0c0c0f" : "var(--text-muted)",
+              fontWeight: 800, fontSize: "0.85rem",
+              cursor: outfitSelectedItems.length >= 1 ? "pointer" : "not-allowed",
+              whiteSpace: "nowrap",
+              boxShadow: outfitSelectedItems.length >= 1
+                ? "0 0 20px rgba(167,139,250,0.4)" : "none",
+              transition: "all 0.2s ease",
+            }}
+          >
+            Build Outfit
+            {outfitSelectedItems.length > 0 && ` (${outfitSelectedItems.length})`}
+          </button>
+        </div>
+      )}
     </>
   );
 }

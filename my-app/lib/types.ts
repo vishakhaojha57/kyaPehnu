@@ -54,6 +54,19 @@ export interface OutfitHistoryRecord {
   bottom_item?: WardrobeItem | null;
 }
 
+// ── Mirrors: RepetitionCheckResponse ──────────────────────────────────────────
+export interface RepetitionCheckResponse {
+  top_worn_ago_days: number | null;
+  top_last_occasion: string | null;
+  bottom_worn_ago_days: number | null;
+  bottom_last_occasion: string | null;
+  combo_worn_ago_days: number | null;
+  combo_last_occasion: string | null;
+  top_worn_count_month: number;
+  bottom_worn_count_month: number;
+  combo_worn_count_month: number;
+}
+
 // ── Mirrors: HealthResponse ──────────────────────────────────────────────────
 export interface HealthResponse {
   status: string;

@@ -55,9 +55,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#0c0c0f] text-white">
+      <body suppressHydrationWarning className="min-h-full flex flex-col bg-[#0c0c0f] text-white">
         <SessionProvider>
           <ServiceWorkerRegistrar />
           {children}

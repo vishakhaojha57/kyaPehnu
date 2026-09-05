@@ -7,6 +7,25 @@ import { Trash2, Shirt } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "react-hot-toast";
 
+/** Returns a human-readable rewear insight for a given outfit record. */
+function computeRewearInsight(record: OutfitHistoryRecord, allHistory: OutfitHistoryRecord[]): string {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const comboThisMonth = allHistory.filter(r => {
+    if (r.top_item_id !== record.top_item_id || r.bottom_item_id !== record.bottom_item_id) return false;
+    const worn = new Date(r.worn_date);
+    return worn >= monthStart;
+  });
+
+  const count = comboThisMonth.length;
+
+  if (count <= 1) return "🎉 First time this combo this month!";
+  if (count === 2) return "Worn 2× this month";
+  return `Worn ${count}× this month`;
+}
+
 export default function WearHistoryView() {
   const { data: session } = useSession();
   const [history, setHistory] = useState<OutfitHistoryRecord[]>([]);
@@ -149,7 +168,7 @@ export default function WearHistoryView() {
             <p style={{ fontSize: "2.5rem", margin: "0 0 14px" }}>🗂️</p>
             <h3 style={{ margin: "0 0 8px", fontSize: "1.1rem", color: "#fff" }}>Your History is Empty</h3>
             <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.85rem" }}>
-              Pick an outfit from Suggestions and confirm the occasion to start tracking!
+              Pick an outfit from Suggestions and confirm the occasion to start tracking your wears!
             </p>
           </div>
         ) : filtered.length === 0 ? (
@@ -161,33 +180,35 @@ export default function WearHistoryView() {
           Object.entries(
             filtered.reduce((acc, record) => {
               const today = new Date().toISOString().slice(0, 10);
-              const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
               const wornDate = record.worn_date || today;
-              let groupLabel = wornDate;
-              
-              if (wornDate === today) {
-                groupLabel = `TODAY · ${new Date(wornDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
-              } else if (wornDate === yesterday) {
-                groupLabel = `YESTERDAY · ${new Date(wornDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
-              } else {
-                groupLabel = new Date(wornDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
-              }
-
-              if (!acc[groupLabel]) acc[groupLabel] = [];
-              acc[groupLabel].push(record);
+              if (!acc[wornDate]) acc[wornDate] = [];
+              acc[wornDate].push(record);
               return acc;
             }, {} as Record<string, OutfitHistoryRecord[]>)
           )
-          .sort((a, b) => b[0].localeCompare(a[0]))
-          .map(([dateLabel, records]) => (
-            <div key={dateLabel} className="relative pl-6 before:absolute before:left-2 before:top-2 before:bottom-0 before:w-px before:bg-white/10 last:before:hidden flex flex-col gap-4 mb-6">
-              {/* Timeline Node & Date Header */}
-              <div className="flex items-center gap-3 relative -left-[19px]">
-                <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 shadow-sm z-10 border-[2px] border-[#0a0a0d]" />
-                <h3 className="text-[0.68rem] font-semibold text-zinc-400 tracking-widest uppercase">
-                  {dateLabel}
-                </h3>
-              </div>
+          .sort((a, b) => b[0].localeCompare(a[0])) // Sort by YYYY-MM-DD descending
+          .map(([dateStr, records]) => {
+            const today = new Date().toISOString().slice(0, 10);
+            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+            let dateLabel = dateStr;
+            
+            if (dateStr === today) {
+              dateLabel = `TODAY · ${new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}`;
+            } else if (dateStr === yesterday) {
+              dateLabel = `YESTERDAY · ${new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}`;
+            } else {
+              dateLabel = new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+            }
+
+            return (
+              <div key={dateStr} className="relative pl-6 before:absolute before:left-2 before:top-2 before:bottom-0 before:w-px before:bg-white/10 last:before:hidden flex flex-col gap-4 mb-6">
+                {/* Timeline Node & Date Header */}
+                <div className="flex items-center gap-3 relative -left-[19px]">
+                  <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 shadow-sm z-10 border-[2px] border-[#0a0a0d]" />
+                  <h3 className="text-[0.68rem] font-semibold text-zinc-400 tracking-widest uppercase">
+                    {dateLabel}
+                  </h3>
+                </div>
 
               {/* Outfit Entries for this Date */}
               {records.map(record => (
@@ -274,14 +295,15 @@ export default function WearHistoryView() {
 
                     {/* Rewear Insight */}
                     <p className="text-[0.7rem] text-zinc-400 flex items-center gap-1.5 mt-1">
-                      {Math.random() > 0.5 ? "First time wearing this combo this month" : "Worn 3 times this month"}
+                      {computeRewearInsight(record, history)}
                     </p>
                   </div>
 
                 </div>
               ))}
             </div>
-          ))
+          );
+        })
         )}
       </div>
     </div>

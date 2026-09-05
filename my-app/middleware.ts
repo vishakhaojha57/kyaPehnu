@@ -12,11 +12,12 @@ const PUBLIC_PATHS = ["/login", "/signup"];
 export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Always allow API routes and static assets
+  // Always allow API routes, static assets, and public files
   if (
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    /\.(?:png|jpg|jpeg|gif|svg|ico|webp|webmanifest|json|js|css|woff2?|ttf|eot|map)$/i.test(pathname)
   ) {
     return NextResponse.next();
   }
@@ -26,12 +27,19 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check session
-  const session = await auth();
-  if (!session) {
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(loginUrl);
+  // Check session — wrap in try/catch so a DB or auth error
+  // returns NextResponse.next() instead of an HTML error page,
+  // which would cause a "Unexpected token '<'" ClientFetchError.
+  try {
+    const session = await auth();
+    if (!session) {
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  } catch (err) {
+    console.error("[middleware] auth() failed, allowing request through:", err);
+    return NextResponse.next();
   }
 
   return NextResponse.next();

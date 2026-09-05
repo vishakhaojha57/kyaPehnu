@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
         hostname: 'avatars.githubusercontent.com',
       },
       {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+      {
         protocol: 'http',
         hostname: 'localhost',
       },

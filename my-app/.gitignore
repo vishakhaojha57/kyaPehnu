@@ -57,3 +57,6 @@ venv/
 ENV/
 .env
 .pytest_cache/
+
+
+CLAUDE.md

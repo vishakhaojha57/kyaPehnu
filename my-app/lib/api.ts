@@ -6,6 +6,7 @@ import type {
   ConsolidatedVisionResponse,
   WearOutfitRequest,
   OutfitHistoryRecord,
+  RepetitionCheckResponse,
 } from "./types";
 
 const BASE_URL =
@@ -24,24 +25,34 @@ async function request<T>(path: string, init?: RequestInit, userId?: string): Pr
     Object.assign(headers, init.headers);
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const isGet = !init || !init.method || init.method.toUpperCase() === "GET";
+  const finalPath = isGet
+    ? path + (path.includes("?") ? "&" : "?") + `_t=${Date.now()}`
+    : path;
+
+  const res = await fetch(`${BASE_URL}${finalPath}`, {
     ...init,
     headers,
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`[${res.status}] ${path} → ${text}`);
+    console.error(`[API ERROR] ${finalPath} -> ${res.status}: ${text}`);
+    throw new Error(`[${res.status}] ${finalPath} → ${text}`);
   }
 
-  return res.json() as Promise<T>;
+  const data = await res.json();
+  if (finalPath.includes("history")) {
+    console.log(`[API TRACE] GET ${finalPath} for user ${userId} returned ${Array.isArray(data) ? data.length : "non-array"} items.`);
+  }
+  return data as T;
 }
 
 export const checkHealth = (): Promise<HealthResponse> =>
   request<HealthResponse>("/health");
 
 export const getAllItems = (userId?: string): Promise<WardrobeItem[]> =>
-  request<WardrobeItem[]>("/api/wardrobe", undefined, userId);
+  request<WardrobeItem[]>("/api/wardrobe", { cache: "no-store" }, userId);
 
 export const getItem = (id: string, userId?: string): Promise<WardrobeItem> =>
   request<WardrobeItem>(`/api/wardrobe/${id}`, undefined, userId);
@@ -66,7 +77,7 @@ export const getOutfitSuggestions = (
   userId?: string
 ): Promise<OutfitSuggestion[]> => {
   const qs = occasion ? `?occasion=${encodeURIComponent(occasion)}` : "";
-  return request<OutfitSuggestion[]>(`/outfits/suggestions${qs}`, undefined, userId);
+  return request<OutfitSuggestion[]>(`/outfits/suggestions${qs}`, { cache: "no-store" }, userId);
 };
 
 export const getOutfitById = (id: string, userId?: string): Promise<OutfitSuggestion> =>
@@ -82,7 +93,7 @@ export const logOutfitWear = (
   }, userId);
 
 export const getOutfitHistory = (userId?: string): Promise<OutfitHistoryRecord[]> =>
-  request<OutfitHistoryRecord[]>("/outfits/history", undefined, userId);
+  request<OutfitHistoryRecord[]>("/outfits/history", { cache: "no-store" }, userId);
 
 export const deleteOutfitHistory = (id: string, userId?: string): Promise<{ deleted: string }> =>
   request<{ deleted: string }>(`/outfits/history/${id}`, { method: "DELETE" }, userId);
@@ -110,3 +121,14 @@ export async function analyzeClothing(file: File, userId?: string): Promise<Cons
 
   return res.json() as Promise<ConsolidatedVisionResponse>;
 }
+
+export const checkRepetition = (
+  topId: string,
+  bottomId: string,
+  userId?: string
+): Promise<RepetitionCheckResponse> =>
+  request<RepetitionCheckResponse>(
+    `/outfits/repetition-check?top_id=${encodeURIComponent(topId)}&bottom_id=${encodeURIComponent(bottomId)}`,
+    undefined,
+    userId
+  );

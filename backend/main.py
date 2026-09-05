@@ -135,12 +135,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://kyapehnu.vercel.app",         # ← your Vercel frontend
-        "https://*.vercel.app",                # ← preview deployments
-    ],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -334,68 +329,121 @@ def get_outfit_suggestions(occasion: Optional[str] = None, db: Session = Depends
     tops = [item for item in items if item.category.lower() in ["top", "tops", "topwear", "t-shirt", "shirt"]]
     bottoms = [item for item in items if item.category.lower() in ["bottom", "bottoms", "bottomwear", "pants", "jeans", "trousers"]]
     footwear = [item for item in items if item.category.lower() in ["footwear", "shoes", "sneakers", "accessory"]]
-
-    if not tops or not bottoms:
-        return []
-
-    if occasion:
-        occasion_lower = occasion.lower()
-        def filter_occ(lst):
-            filtered = [i for i in lst if any(occasion_lower in occ.lower() for occ in i.occasions)]
-            return filtered if filtered else lst
-        tops = filter_occ(tops)
-        bottoms = filter_occ(bottoms)
-        footwear = filter_occ(footwear) if footwear else []
+    full_outfits = [item for item in items if item.category.lower() in ["outfit", "dress", "dresses", "suit", "suits", "lehenga", "traditional", "co-ord", "one-piece", "ethnic"]]
 
     suggestions = []
     neutrals = ["black", "white", "grey", "gray", "navy", "beige", "brown", "cream"]
-    random.shuffle(tops)
-    random.shuffle(bottoms)
 
-    for _ in range(min(15, len(tops) * len(bottoms))):
-        top = random.choice(tops)
-        bottom = random.choice(bottoms)
-        shoes = random.choice(footwear) if footwear else None
-
-        is_top_neutral = any(n in top.color.lower() for n in neutrals)
-        is_bottom_neutral = any(n in bottom.color.lower() for n in neutrals)
-
-        if is_top_neutral and is_bottom_neutral:
-            score = round(random.uniform(0.92, 0.98), 2)
-            note = "Classic neutral combo, highly versatile and safe."
-        elif is_top_neutral or is_bottom_neutral:
-            score = round(random.uniform(0.88, 0.95), 2)
-            note = "Great balance! A pop of color anchored by a neutral piece."
-        else:
-            if top.color.lower() == bottom.color.lower():
-                score = round(random.uniform(0.85, 0.90), 2)
-                note = "Monochrome look. Bold and stylish."
+    # ── 1. Create full outfit suggestions (Dresses, Lehengas, Suits) ───────────
+    for full_item in full_outfits:
+        occ = "casual"
+        if full_item.occasions:
+            all_occ = " ".join(o.lower() for o in full_item.occasions)
+            if any(k in all_occ for k in ["wedding", "festive", "traditional"]):
+                occ = "festive"
+            elif any(k in all_occ for k in ["party", "clubbing"]):
+                occ = "party"
+            elif any(k in all_occ for k in ["formal", "office"]):
+                occ = "formal"
+            elif any(k in all_occ for k in ["college"]):
+                occ = "college_daily"
             else:
-                score = round(random.uniform(0.80, 0.88), 2)
-                note = "Vibrant color blocking combo. Perfect for standing out."
+                occ = full_item.occasions[0].lower()
 
-        outfit_items = [top, bottom]
-        if shoes:
-            outfit_items.append(shoes)
+        if occasion and occasion.lower() not in occ and not any(occasion.lower() in o.lower() for o in full_item.occasions):
+            continue
 
-        top_occs = set(occ.lower() for occ in top.occasions)
-        bot_occs = set(occ.lower() for occ in bottom.occasions)
-        shared_occs = top_occs.intersection(bot_occs)
+        outfit_items = [full_item]
+        if footwear:
+            matching_shoes = [s for s in footwear if any(o.lower() in occ for o in s.occasions)]
+            if matching_shoes:
+                outfit_items.append(random.choice(matching_shoes))
 
-        if occasion:
-            final_occasion = occasion
-        elif shared_occs:
-            final_occasion = list(shared_occs)[0]
-        else:
-            final_occasion = "casual"
+        score = round(random.uniform(0.93, 0.98), 2)
+        note = f"Complete {full_item.name} ensemble. Elegant and effortlessly coordinated."
 
         suggestions.append(OutfitSuggestion(
             id=f"outfit-{uuid.uuid4().hex[:6]}",
-            occasion=final_occasion,
+            occasion=occ,
             items=outfit_items,
             confidence_score=score,
             style_note=note
         ))
+
+    # ── 2. Create 2-piece Top + Bottom combinations ───────────────────────────
+    if tops and bottoms:
+        if occasion:
+            occasion_lower = occasion.lower()
+            def filter_occ(lst):
+                filtered = [i for i in lst if any(occasion_lower in occ.lower() for occ in i.occasions)]
+                return filtered if filtered else lst
+            cand_tops = filter_occ(tops)
+            cand_bottoms = filter_occ(bottoms)
+            cand_footwear = filter_occ(footwear) if footwear else []
+        else:
+            cand_tops = list(tops)
+            cand_bottoms = list(bottoms)
+            cand_footwear = list(footwear)
+
+        random.shuffle(cand_tops)
+        random.shuffle(cand_bottoms)
+
+        # Generate a diverse set across occasions
+        target_count = max(15, min(30, len(cand_tops) * len(cand_bottoms)))
+        for _ in range(target_count):
+            top = random.choice(cand_tops)
+            bottom = random.choice(cand_bottoms)
+            shoes = random.choice(cand_footwear) if cand_footwear else None
+
+            is_top_neutral = any(n in top.color.lower() for n in neutrals)
+            is_bottom_neutral = any(n in bottom.color.lower() for n in neutrals)
+
+            if is_top_neutral and is_bottom_neutral:
+                score = round(random.uniform(0.92, 0.98), 2)
+                note = "Classic neutral combo, highly versatile and safe."
+            elif is_top_neutral or is_bottom_neutral:
+                score = round(random.uniform(0.88, 0.95), 2)
+                note = "Great balance! A pop of color anchored by a neutral piece."
+            else:
+                if top.color.lower() == bottom.color.lower():
+                    score = round(random.uniform(0.85, 0.90), 2)
+                    note = "Monochrome look. Bold and stylish."
+                else:
+                    score = round(random.uniform(0.80, 0.88), 2)
+                    note = "Vibrant color blocking combo. Perfect for standing out."
+
+            outfit_items = [top, bottom]
+            if shoes:
+                outfit_items.append(shoes)
+
+            top_occs = set(occ.lower() for occ in top.occasions)
+            bot_occs = set(occ.lower() for occ in bottom.occasions)
+            shared_occs = top_occs.intersection(bot_occs)
+
+            if occasion:
+                final_occasion = occasion
+            elif shared_occs:
+                raw_occ = list(shared_occs)[0]
+                if "party" in raw_occ:
+                    final_occasion = "party"
+                elif "festive" in raw_occ or "wedding" in raw_occ:
+                    final_occasion = "festive"
+                elif "formal" in raw_occ or "office" in raw_occ:
+                    final_occasion = "formal"
+                elif "college" in raw_occ:
+                    final_occasion = "college_daily"
+                else:
+                    final_occasion = raw_occ
+            else:
+                final_occasion = "casual"
+
+            suggestions.append(OutfitSuggestion(
+                id=f"outfit-{uuid.uuid4().hex[:6]}",
+                occasion=final_occasion,
+                items=outfit_items,
+                confidence_score=score,
+                style_note=note
+            ))
 
     unique_suggestions = []
     seen = set()
@@ -404,7 +452,7 @@ def get_outfit_suggestions(occasion: Optional[str] = None, db: Session = Depends
         if combo_key not in seen:
             seen.add(combo_key)
             unique_suggestions.append(sug)
-        if len(unique_suggestions) >= 5:
+        if len(unique_suggestions) >= 25:
             break
 
     unique_suggestions.sort(key=lambda x: x.confidence_score, reverse=True)
@@ -488,6 +536,108 @@ def delete_outfit_history(record_id: str, db: Session = Depends(get_db), user_id
     db.delete(record)
     db.commit()
     return {"deleted": record_id}
+
+
+class RepetitionCheckResponse(BaseModel):
+    top_worn_ago_days: Optional[int] = None
+    top_last_occasion: Optional[str] = None
+    bottom_worn_ago_days: Optional[int] = None
+    bottom_last_occasion: Optional[str] = None
+    combo_worn_ago_days: Optional[int] = None
+    combo_last_occasion: Optional[str] = None
+    top_worn_count_month: int = 0
+    bottom_worn_count_month: int = 0
+    combo_worn_count_month: int = 0
+
+
+@app.get("/outfits/repetition-check", response_model=RepetitionCheckResponse, tags=["Outfits"])
+def check_repetition(
+    top_id: str,
+    bottom_id: str,
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Depends(get_current_user_id),
+):
+    """
+    Check how recently the given top, bottom, or their combination has been worn.
+    Returns days-ago counts and the occasion they were last worn on.
+    """
+    today = datetime.utcnow().date()
+    thirty_days_ago = (datetime.utcnow().replace(day=1)).date()  # start of this month
+
+    query = db.query(OutfitHistoryDB)
+    if user_id:
+        query = query.filter(OutfitHistoryDB.user_id == user_id)
+    all_history = query.order_by(OutfitHistoryDB.worn_date.desc()).all()
+
+    def days_ago(worn_date_str: str) -> Optional[int]:
+        try:
+            worn = datetime.strptime(worn_date_str[:10], "%Y-%m-%d").date()
+            return (today - worn).days
+        except Exception:
+            return None
+
+    # --- Top analysis ---
+    top_worn_ago_days = None
+    top_last_occasion = None
+    top_worn_count_month = 0
+    for rec in all_history:
+        if rec.top_item_id == top_id:
+            d = days_ago(rec.worn_date)
+            if top_worn_ago_days is None and d is not None:
+                top_worn_ago_days = d
+                top_last_occasion = rec.occasion_display
+            try:
+                worn_date = datetime.strptime(rec.worn_date[:10], "%Y-%m-%d").date()
+                if worn_date >= thirty_days_ago:
+                    top_worn_count_month += 1
+            except Exception:
+                pass
+
+    # --- Bottom analysis ---
+    bottom_worn_ago_days = None
+    bottom_last_occasion = None
+    bottom_worn_count_month = 0
+    for rec in all_history:
+        if rec.bottom_item_id == bottom_id:
+            d = days_ago(rec.worn_date)
+            if bottom_worn_ago_days is None and d is not None:
+                bottom_worn_ago_days = d
+                bottom_last_occasion = rec.occasion_display
+            try:
+                worn_date = datetime.strptime(rec.worn_date[:10], "%Y-%m-%d").date()
+                if worn_date >= thirty_days_ago:
+                    bottom_worn_count_month += 1
+            except Exception:
+                pass
+
+    # --- Combo analysis ---
+    combo_worn_ago_days = None
+    combo_last_occasion = None
+    combo_worn_count_month = 0
+    for rec in all_history:
+        if rec.top_item_id == top_id and rec.bottom_item_id == bottom_id:
+            d = days_ago(rec.worn_date)
+            if combo_worn_ago_days is None and d is not None:
+                combo_worn_ago_days = d
+                combo_last_occasion = rec.occasion_display
+            try:
+                worn_date = datetime.strptime(rec.worn_date[:10], "%Y-%m-%d").date()
+                if worn_date >= thirty_days_ago:
+                    combo_worn_count_month += 1
+            except Exception:
+                pass
+
+    return RepetitionCheckResponse(
+        top_worn_ago_days=top_worn_ago_days,
+        top_last_occasion=top_last_occasion,
+        bottom_worn_ago_days=bottom_worn_ago_days,
+        bottom_last_occasion=bottom_last_occasion,
+        combo_worn_ago_days=combo_worn_ago_days,
+        combo_last_occasion=combo_last_occasion,
+        top_worn_count_month=top_worn_count_month,
+        bottom_worn_count_month=bottom_worn_count_month,
+        combo_worn_count_month=combo_worn_count_month,
+    )
 
 
 # Vision Route

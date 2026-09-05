@@ -174,35 +174,6 @@ export function OutfitCard({
   };
   const pct = Math.round(outfit.confidence_score * 100);
 
-  let topIndex = currentItems.findIndex(i => i.category?.toLowerCase() === "top");
-  let bottomIndex = currentItems.findIndex(i => i.category?.toLowerCase() === "bottom");
-
-  if (topIndex === -1 && currentItems.length > 0) topIndex = 0;
-  if ((bottomIndex === -1 || bottomIndex === topIndex) && currentItems.length > 1) bottomIndex = 1;
-
-  const suggestedTop = topIndex !== -1 ? currentItems[topIndex] : null;
-  const suggestedBottom = bottomIndex !== -1 ? currentItems[bottomIndex] : null;
-
-  const renderTop = suggestedTop || {
-    id: "dummy-top",
-    name: "Classic White T-Shirt",
-    category: "top",
-    color: "#ffffff",
-    brand: "Uniqlo",
-    seasons: ["Summer"],
-    image_url: "https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=400&q=80"
-  };
-
-  const renderBottom = suggestedBottom || {
-    id: "dummy-bottom",
-    name: "Slim Fit Blue Jeans",
-    category: "bottom",
-    color: "#1e3a8a",
-    brand: "Levi's",
-    seasons: ["All-season"],
-    image_url: "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=400&q=80"
-  };
-
   return (
     <div
       className={`relative flex flex-col h-full gap-4 p-5 rounded-[28px] border border-white/10 bg-zinc-900/60 backdrop-blur-2xl animate-enter stagger-${Math.min(index + 1, 6)} group overflow-hidden transition-all duration-500 hover:-translate-y-1.5 hover:shadow-[0_24px_50px_-12px_rgba(168,85,247,0.15)] hover:border-white/20`}
@@ -225,15 +196,12 @@ export function OutfitCard({
       </div>
 
       <div className="flex flex-row gap-2 h-[15rem] z-10">
-        {[
-          { item: renderTop, idx: topIndex, label: "Top" },
-          { item: renderBottom, idx: bottomIndex, label: "Bottom" }
-        ].map(({ item, idx, label }) => (
-          <div key={label} className="flex-1 relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 group/item cursor-pointer shadow-inner transition-all duration-500 hover:border-purple-400/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+        {currentItems.map((item, idx) => (
+          <div key={`${item.id}-${idx}`} className="flex-1 relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 group/item cursor-pointer shadow-inner transition-all duration-500 hover:border-purple-400/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">
             <button
               onClick={(e) => handleSwap(e, idx)}
               className="absolute inset-0 m-auto w-10 h-10 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-all duration-300 z-20 hover:bg-white hover:text-black hover:scale-110 shadow-xl backdrop-blur-sm border border-white/20"
-              title={`Shuffle ${label}`}
+              title="Shuffle item"
             >
               <RefreshCw size={16} strokeWidth={2.5} />
             </button>
@@ -243,15 +211,8 @@ export function OutfitCard({
               alt={item.name} 
               fill
               sizes="(max-width: 768px) 100vw, 33vw"
-              className="object-cover transition-transform duration-700 group-hover/item:scale-110 opacity-80 group-hover/item:opacity-100" 
+              className="object-cover transition-transform duration-700 group-hover/item:scale-110 opacity-90 group-hover/item:opacity-100" 
             />
-            
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80 group-hover/item:opacity-100 transition-opacity duration-500 pointer-events-none" />
-            
-            <div className="absolute inset-x-0 bottom-0 p-3.5 translate-y-2 group-hover/item:translate-y-0 transition-transform duration-500 pointer-events-none">
-              <span className="text-[0.55rem] font-black text-cyan-400 uppercase tracking-[0.2em] block mb-1 drop-shadow-md">{label}</span>
-              <p className="text-[0.75rem] font-bold text-white truncate leading-tight drop-shadow-md">{item.name}</p>
-            </div>
           </div>
         ))}
       </div>

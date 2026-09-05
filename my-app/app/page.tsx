@@ -30,7 +30,8 @@ import { COLORS, GRADIENTS, TYPOGRAPHY } from "./theme/designSystem";
 
 export default function Home() {
   const { data: session } = useSession();
-
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(true);
@@ -68,8 +69,46 @@ export default function Home() {
   const [itemToDelete, setItemToDelete] = useState<WardrobeItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // ── Outfit Builder Mode ────────────────────────────────────────────────────
+  const [outfitBuilderMode, setOutfitBuilderMode] = useState(false);
+  const [outfitSelectedIds, setOutfitSelectedIds] = useState<string[]>([]);
+
   const handleSelectItem = useCallback((item: WardrobeItem) => {
     setSelectedItem((prev) => prev?.id === item.id ? null : item);
+  }, []);
+
+  // ── Outfit Builder handlers ────────────────────────────────────────────────
+  const handleOpenOutfitBuilder = useCallback(() => {
+    setActiveTab("wardrobe");
+    setOutfitBuilderMode(true);
+    setOutfitSelectedIds([]);
+  }, []);
+
+  const handleOutfitToggle = useCallback((item: WardrobeItem) => {
+    setOutfitSelectedIds(prev =>
+      prev.includes(item.id)
+        ? prev.filter(id => id !== item.id)
+        : [...prev, item.id]
+    );
+  }, []);
+
+  const handleOutfitConfirm = useCallback((selectedItems: WardrobeItem[]) => {
+    if (selectedItems.length === 0) return;
+    const customOutfit: OutfitSuggestion = {
+      id: "custom-" + Date.now(),
+      occasion: "casual",
+      items: selectedItems,
+      confidence_score: 1.0,
+      style_note: "Custom outfit",
+    };
+    setOutfitBuilderMode(false);
+    setOutfitSelectedIds([]);
+    setOutfitToWear(customOutfit);
+  }, []);
+
+  const handleOutfitCancel = useCallback(() => {
+    setOutfitBuilderMode(false);
+    setOutfitSelectedIds([]);
   }, []);
 
   const handleCloseModal = useCallback(() => {
@@ -189,6 +228,7 @@ export default function Home() {
 
   return (
     <main
+      suppressHydrationWarning
       style={{
         minHeight: "100vh",
         background: COLORS.base,
@@ -223,8 +263,10 @@ export default function Home() {
               overflow: "hidden", flexShrink: 0,
               boxShadow: "0 0 14px rgba(109,40,217,0.45)",
             }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/kyapehnu-icon.png" alt="KyaPehnu" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              {mounted && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src="/kyapehnu-icon.png" alt="KyaPehnu" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              )}
             </div>
             <span style={{ fontWeight: 800, fontSize: "1.08rem", letterSpacing: "-0.02em" }}>
               KyaPehnu
@@ -232,6 +274,7 @@ export default function Home() {
           </div>
 
           <button
+            suppressHydrationWarning
             id="nav-profile-btn"
             onClick={() => setIsSidebarOpen(true)}
             title="Open profile menu"
@@ -362,6 +405,11 @@ export default function Home() {
             selectedId={selectedItem?.id ?? null}
             onSelect={handleSelectItem}
             onDelete={handleDeleteClick}
+            outfitBuilderMode={outfitBuilderMode}
+            outfitSelectedIds={outfitSelectedIds}
+            onOutfitToggle={handleOutfitToggle}
+            onOutfitConfirm={handleOutfitConfirm}
+            onOutfitCancel={handleOutfitCancel}
           />
         )}
 
@@ -376,7 +424,7 @@ export default function Home() {
             onWearToday={setOutfitToWear}
             onRefresh={suggestions.refresh}
             onScanNew={() => setActiveTab("vision")}
-            onOpenManualCreator={() => setIsManualCreatorOpen(true)}
+            onOpenManualCreator={handleOpenOutfitBuilder}
           />
         )}
 
@@ -412,6 +460,7 @@ export default function Home() {
 
       {itemToDelete && (
         <div
+          suppressHydrationWarning
           style={{
             position: "fixed", inset: 0, zIndex: 60,
             background: "rgba(0,0,0,0.65)",
@@ -435,8 +484,8 @@ export default function Home() {
               boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
             }}
           >
-            <div className="flex items-center gap-3 text-red-400">
-              <Trash2 size={24} />
+            <div suppressHydrationWarning className="flex items-center gap-3 text-red-400">
+              <Trash2 suppressHydrationWarning size={24} />
               <h3 className="text-lg font-bold m-0 text-white">Delete Item</h3>
             </div>
             <p className="text-[0.9rem] text-zinc-300 m-0 leading-relaxed">

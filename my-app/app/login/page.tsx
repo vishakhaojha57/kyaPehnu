@@ -60,13 +60,13 @@ function LoginForm() {
 
         {/* Brand */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{
+          <div suppressHydrationWarning style={{
             position: "relative", width: 64, height: 64, margin: "0 auto 12px",
             borderRadius: 18, overflow: "hidden",
             boxShadow: "0 0 28px rgba(109, 40, 217, 0.5), 0 0 60px rgba(0,245,255,0.15)"
           }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/kyapehnu-icon.png" alt="KyaPehnu" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img suppressHydrationWarning src="/kyapehnu-icon.png" alt="KyaPehnu" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </div>
           <h1 style={{
             margin: "8px 0 4px",
