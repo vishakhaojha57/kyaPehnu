@@ -1,17 +1,21 @@
 import io
+import os
+import json
 import base64
 import uuid
 import logging
 import asyncio
 from typing import List, Any, Optional, Tuple
+
+import numpy as np
 from PIL import Image
 from colorthief import ColorThief
-from transformers import pipeline
 
 from utils.vision_taxonomy import (
     FASHION_HIERARCHY, _ALL_FASHION_LABELS, _LABEL_TO_CATEGORY,
     _yolo_class_to_taxonomy, _resolve_seasons_for_item, _resolve_occasions_for_item,
-    _has_clothing_signal, _resolve_label, _CATEGORY_TITLE
+    _has_clothing_signal, _resolve_label, _CATEGORY_TITLE,
+    MODEL2_TO_TAXONOMY,
 )
 from utils.image_processing import (
     MemoryImageBuffer, _resolve_crop_box, _rgb_to_hex
@@ -20,26 +24,68 @@ from services.yolo_service import get_yolo_detector, is_yolo_available
 
 logger = logging.getLogger(__name__)
 
-logger.info("Loading fashion classification pipeline...")
+# ──────────────────────────────────────────────────────────────────────────────
+# MODEL 2 — Custom EfficientNetB0 TFLite Category Classifier (replaces FashionCLIP)
+# Architecture: EfficientNetB0 → GAP → BatchNorm → Dense → Dropout → Dense(12, softmax)
+# Input: 224×224 RGB float32 [0, 255]   (EfficientNet includes internal rescaling)
+# Output: (1, 12) softmax probabilities
+# ──────────────────────────────────────────────────────────────────────────────
+
+_MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "models"))
+
+_TFLITE_MODEL_PATH = os.path.join(_MODEL_DIR, "model2_category_classifier.tflite")
+_LABEL_MAP_PATH = os.path.join(_MODEL_DIR, "model2_label_mapping.json")
+
+_TFLITE_INTERPRETER = None
+_TFLITE_INPUT_DETAILS = None
+_TFLITE_OUTPUT_DETAILS = None
+_TFLITE_LABELS: dict[int, str] = {}
+_IS_TFLITE_READY = False
+
+logger.info("Loading custom TFLite category classifier...")
 try:
-    _CLASSIFIER = pipeline(
-        task="zero-shot-image-classification",
-        model="patrickjohncyh/fashion-clip",
+    # Try ai-edge-litert first (Python 3.13+), then tflite-runtime, then full TF
+    try:
+        from ai_edge_litert import interpreter as tflite_interp
+        _TFLiteInterpreter = tflite_interp.Interpreter
+        logger.info("Using ai-edge-litert TFLite backend.")
+    except ImportError:
+        try:
+            import tflite_runtime.interpreter as tflite_interp
+            _TFLiteInterpreter = tflite_interp.Interpreter
+            logger.info("Using tflite-runtime TFLite backend.")
+        except ImportError:
+            import tensorflow as tf
+            _TFLiteInterpreter = tf.lite.Interpreter
+            logger.info("Using tensorflow.lite TFLite backend.")
+
+    _TFLITE_INTERPRETER = _TFLiteInterpreter(model_path=_TFLITE_MODEL_PATH)
+    _TFLITE_INTERPRETER.allocate_tensors()
+    _TFLITE_INPUT_DETAILS = _TFLITE_INTERPRETER.get_input_details()
+    _TFLITE_OUTPUT_DETAILS = _TFLITE_INTERPRETER.get_output_details()
+
+    with open(_LABEL_MAP_PATH, "r", encoding="utf-8") as f:
+        raw_labels = json.load(f)
+    _TFLITE_LABELS = {int(k): v for k, v in raw_labels.items()}
+
+    _IS_TFLITE_READY = True
+    input_shape = _TFLITE_INPUT_DETAILS[0]["shape"]
+    logger.info(
+        "TFLite category classifier ready. Input shape: %s, Classes: %d (%s)",
+        input_shape, len(_TFLITE_LABELS),
+        ", ".join(_TFLITE_LABELS.values()),
     )
-    _IS_ZERO_SHOT = True
-    logger.info("Fashion-CLIP zero-shot pipeline ready.")
-except Exception as _clip_err:
-    logger.warning("Fashion-CLIP unavailable (%s) — falling back to ViT.", _clip_err)
-    _CLASSIFIER = pipeline(
-        task="image-classification",
-        model="google/vit-base-patch16-224",
-        top_k=10,
-    )
-    _IS_ZERO_SHOT = False
-    logger.warning("Loaded generic ViT — clothing detection accuracy will be limited.")
+except Exception as _tflite_err:
+    logger.warning("TFLite model unavailable (%s) — category classification disabled.", _tflite_err)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Security Gateway — ViT (unchanged, lightweight usage)
+# ──────────────────────────────────────────────────────────────────────────────
 
 try:
-    _SECURITY_CLASSIFIER = pipeline(
+    from transformers import pipeline as _hf_pipeline
+
+    _SECURITY_CLASSIFIER = _hf_pipeline(
         task="image-classification",
         model="google/vit-base-patch16-224",
         top_k=1,
@@ -48,6 +94,49 @@ try:
 except Exception as sec_err:
     _SECURITY_CLASSIFIER = None
     logger.warning("Security Gateway ViT unavailable: %s", sec_err)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TFLite inference helper
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _tflite_classify(pil_img: Image.Image) -> tuple[str, str, float]:
+    """
+    Run the TFLite EfficientNetB0 model on a PIL image.
+    Returns (category, sub_type, confidence).
+    Falls back to ("top", "t-shirt", 0.0) if the model is not available.
+    """
+    if not _IS_TFLITE_READY:
+        return "top", "t-shirt", 0.0
+
+    # Determine expected input shape from the model
+    input_shape = _TFLITE_INPUT_DETAILS[0]["shape"]  # e.g. [1, 224, 224, 3]
+    h, w = int(input_shape[1]), int(input_shape[2])
+
+    # Preprocess: resize → numpy float32 → expand dims
+    img_resized = pil_img.resize((w, h), Image.LANCZOS)
+    img_arr = np.array(img_resized, dtype=np.float32)  # shape (224, 224, 3), values [0, 255]
+    img_arr = np.expand_dims(img_arr, axis=0)           # shape (1, 224, 224, 3)
+
+    # Run inference
+    _TFLITE_INTERPRETER.set_tensor(_TFLITE_INPUT_DETAILS[0]["index"], img_arr)
+    _TFLITE_INTERPRETER.invoke()
+    output = _TFLITE_INTERPRETER.get_tensor(_TFLITE_OUTPUT_DETAILS[0]["index"])  # shape (1, 12)
+
+    # Get top prediction
+    probs = output[0]
+    class_idx = int(np.argmax(probs))
+    confidence = float(probs[class_idx])
+    class_name = _TFLITE_LABELS.get(class_idx, "Tops")
+
+    # Map to taxonomy
+    cat, sub = MODEL2_TO_TAXONOMY.get(class_name, ("top", "t-shirt"))
+
+    logger.info(
+        "[TFLITE] Predicted: %s (idx=%d, conf=%.3f) → category=%s, sub_type=%s",
+        class_name, class_idx, confidence, cat, sub,
+    )
+    return cat, sub, confidence
 
 
 async def process_vision_pipeline(image_bytes: bytes) -> dict:
@@ -118,23 +207,29 @@ async def process_vision_pipeline(image_bytes: bytes) -> dict:
                 cls_name = yolo.names.get(cls_id, "clothing")
                 x1, y1, x2, y2 = [int(v) for v in box.xyxy[0]]
 
-                cat, _ = _yolo_class_to_taxonomy(cls_name)
-                if cat not in FASHION_HIERARCHY:
-                    cat = "top"
+                # YOLO gives an initial category guess
+                yolo_cat, _ = _yolo_class_to_taxonomy(cls_name)
+                if yolo_cat not in FASHION_HIERARCHY:
+                    yolo_cat = "top"
 
                 crop_pil = pil_img.crop((x1, y1, x2, y2))
                 crop_b64 = _make_b64(crop_pil)
 
-                sub = FASHION_HIERARCHY[cat]["default"]
-                if _IS_ZERO_SHOT:
+                # ── Use TFLite Model 2 instead of FashionCLIP ─────────────
+                if _IS_TFLITE_READY:
                     try:
-                        preds = await asyncio.to_thread(_CLASSIFIER, crop_pil, candidate_labels=_ALL_FASHION_LABELS)
-                        if preds:
-                            sub = preds[0]["label"]
-                            cat = _LABEL_TO_CATEGORY[sub]
-                            logger.info("[LOCAL-PIPELINE] Zero-Shot match: %r (score: %.3f)", sub, preds[0]["score"])
+                        cat, sub, tflite_conf = await asyncio.to_thread(_tflite_classify, crop_pil)
+                        logger.info(
+                            "[LOCAL-PIPELINE] TFLite classified crop: cat=%s, sub=%s (conf=%.3f)",
+                            cat, sub, tflite_conf,
+                        )
                     except Exception as e:
-                        logger.warning("[LOCAL-PIPELINE] Zero-Shot inference failed: %s", e)
+                        logger.warning("[LOCAL-PIPELINE] TFLite inference failed: %s", e)
+                        cat = yolo_cat
+                        sub = FASHION_HIERARCHY[yolo_cat]["default"]
+                else:
+                    cat = yolo_cat
+                    sub = FASHION_HIERARCHY[yolo_cat]["default"]
 
                 try:
                     cb = io.BytesIO()
@@ -160,23 +255,23 @@ async def process_vision_pipeline(image_bytes: bytes) -> dict:
                     "occasions": _resolve_occasions_for_item(cat, sub),
                 })
         except Exception as yolo_err:
-            logger.warning("[LOCAL-PIPELINE] YOLO failed: %s — falling back to ViT whole-image.", yolo_err)
+            logger.warning("[LOCAL-PIPELINE] YOLO failed: %s — falling back to TFLite whole-image.", yolo_err)
 
     if not final_items:
-        logger.info("[LOCAL-PIPELINE] Running Zero-Shot whole-image classification.")
+        logger.info("[LOCAL-PIPELINE] Running TFLite whole-image classification.")
         cat = "top"
         sub = FASHION_HIERARCHY["top"]["default"]
         hex_color = "#808080"
 
-        if _IS_ZERO_SHOT:
+        if _IS_TFLITE_READY:
             try:
-                preds = await asyncio.to_thread(_CLASSIFIER, pil_img, candidate_labels=_ALL_FASHION_LABELS)
-                if preds:
-                    sub = preds[0]["label"]
-                    cat = _LABEL_TO_CATEGORY[sub]
-                    logger.info("[LOCAL-PIPELINE] Fallback Zero-Shot match: %r (score: %.3f)", sub, preds[0]["score"])
+                cat, sub, tflite_conf = await asyncio.to_thread(_tflite_classify, pil_img)
+                logger.info(
+                    "[LOCAL-PIPELINE] Fallback TFLite match: cat=%s, sub=%s (conf=%.3f)",
+                    cat, sub, tflite_conf,
+                )
             except Exception as e:
-                logger.warning("[LOCAL-PIPELINE] Zero-Shot whole-image failed: %s", e)
+                logger.warning("[LOCAL-PIPELINE] TFLite whole-image failed: %s", e)
 
         try:
             cb = io.BytesIO()
@@ -213,23 +308,13 @@ def classify_image(image_bytes: bytes) -> Optional[Tuple[str, str, str]]:
     source_buf = MemoryImageBuffer.from_bytes(image_bytes)
     box = _resolve_crop_box(source_buf)
     crop_buf = MemoryImageBuffer.from_crop(source_buf, box)
-    predictions = _CLASSIFIER(crop_buf.to_pil())
 
-    resolved_sub_type = None
-    resolved_category = None
-
-    for pred in predictions:
-        sub_type_candidate, category_candidate = _resolve_label(pred["label"])
-        if category_candidate is not None:
-            resolved_sub_type = sub_type_candidate
-            resolved_category = category_candidate
-            break
-
-    if resolved_category is None:
-        return None
-
-    label_corpus = " ".join(p["label"] for p in predictions)
-    if not _has_clothing_signal(label_corpus):
+    # Use TFLite Model 2 for classification
+    if _IS_TFLITE_READY:
+        cat, sub, confidence = _tflite_classify(crop_buf.to_pil())
+        if confidence < 0.15:
+            return None
+    else:
         return None
 
     ct = ColorThief(crop_buf.to_bytesio())
@@ -239,4 +324,4 @@ def classify_image(image_bytes: bytes) -> Optional[Tuple[str, str, str]]:
         dominant = (128, 128, 128)
 
     hex_color = _rgb_to_hex(*dominant)
-    return resolved_category, resolved_sub_type, hex_color
+    return cat, sub, hex_color

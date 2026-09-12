@@ -36,11 +36,17 @@ const CATEGORY_ICONS: Record<string, string> = {
   bottom:    "👖",
   footwear:  "👟",
   accessory: "⌚",
+  outfit:    "👗",
+  traditional: "🥻",
+  western:   "💃",
   // Title-cased aliases (V2/V3 contract)
   Top:       "👕",
   Bottom:    "👖",
   Footwear:  "👟",
   Accessory: "⌚",
+  Outfit:    "👗",
+  Traditional: "🥻",
+  Western:   "💃",
 };
 
 interface CameraLensProps {

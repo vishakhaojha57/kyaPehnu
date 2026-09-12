@@ -7,6 +7,9 @@ export const CATEGORY_COLORS: Record<string, string> = {
   bottom: "#60a5fa",
   footwear: "#34d399",
   accessory: "#fbbf24",
+  outfit: "#f472b6",
+  traditional: "#ec4899",
+  western: "#c026d3",
 };
 
 // ── Occasion badge colours ───────────────────────────────────────────────────

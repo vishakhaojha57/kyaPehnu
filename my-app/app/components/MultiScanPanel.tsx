@@ -28,12 +28,18 @@ const CAT_ICONS: Record<string, string> = {
   bottom:    "👖",
   footwear:  "👟",
   accessory: "⌚",
+  outfit:    "👗",
+  traditional: "🥻",
+  western:   "💃",
 };
 const CAT_COLORS: Record<string, string> = {
   top:       "#a78bfa",
   bottom:    "#60a5fa",
   footwear:  "#34d399",
   accessory: "#fbbf24",
+  outfit:    "#f472b6",
+  traditional: "#ec4899",
+  western:   "#c026d3",
 };
 
 // ── Toast types ───────────────────────────────────────────────────────────────
@@ -372,7 +378,7 @@ export default function MultiScanPanel({ onScanComplete }: MultiScanPanelProps) 
 
 // ── DetectedItemCard ──────────────────────────────────────────────────────────
 function DetectedItemCard({
-  item,
+  item: initialItem,
   index,
   onSave,
   onRescan,
@@ -382,10 +388,17 @@ function DetectedItemCard({
   onSave: (item: ScanResultItemV2) => Promise<void>;
   onRescan: () => void;
 }) {
+  const [item, setItem] = useState(initialItem);
   const catKey = item.category.toLowerCase();
   const catColor = CAT_COLORS[catKey] ?? "#8b8b9a";
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    category: item.category,
+    sub_type: item.sub_type,
+    name: item.name,
+  });
 
   const handleSave = async () => {
     if (saving || saved) return;
@@ -459,6 +472,18 @@ function DetectedItemCard({
           </button>
           
           <button
+            onClick={() => {
+              setEditForm({ category: item.category, sub_type: item.sub_type, name: item.name });
+              setIsEditing(true);
+            }}
+            disabled={saving || saved}
+            className="flex items-center justify-center p-2.5 rounded-xl bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-700/80 border border-white/5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Edit"
+          >
+            <span className="text-[0.9rem]">✏️</span>
+          </button>
+
+          <button
             onClick={onRescan}
             className="flex items-center justify-center p-2.5 rounded-xl bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-700/80 border border-white/5 transition-colors cursor-pointer"
             title="Rescan"
@@ -467,6 +492,72 @@ function DetectedItemCard({
           </button>
         </div>
       </div>
+
+      {/* Edit Overlay */}
+      {isEditing && (
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-white/10 rounded-2xl p-5 w-full flex flex-col gap-4 shadow-2xl">
+            <h3 className="text-white font-bold text-sm">Edit Detected Item</h3>
+            
+            <div className="flex flex-col gap-1.5">
+              <label className="text-zinc-400 text-[0.65rem] uppercase tracking-wider font-bold">Category</label>
+              <select 
+                value={editForm.category.toLowerCase()}
+                onChange={(e) => setEditForm(prev => ({ ...prev, category: e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) }))}
+                className="bg-zinc-800 text-white text-sm rounded-xl p-2.5 border border-white/10 outline-none focus:border-cyan-500/50 transition-colors"
+              >
+                <option value="top">Top</option>
+                <option value="bottom">Bottom</option>
+                <option value="outfit">Outfit</option>
+                <option value="traditional">Traditional Dress</option>
+                <option value="western">Western One-pieces</option>
+                <option value="footwear">Footwear</option>
+                <option value="accessory">Accessory</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-zinc-400 text-[0.65rem] uppercase tracking-wider font-bold">Sub Category</label>
+              <input 
+                type="text"
+                value={editForm.sub_type}
+                onChange={(e) => setEditForm(prev => ({ ...prev, sub_type: e.target.value }))}
+                placeholder="e.g. Saree, Lehenga, Baggy Jeans"
+                className="bg-zinc-800 text-white text-sm rounded-xl p-2.5 border border-white/10 outline-none focus:border-cyan-500/50 transition-colors"
+              />
+            </div>
+            
+            <div className="flex flex-col gap-1.5">
+              <label className="text-zinc-400 text-[0.65rem] uppercase tracking-wider font-bold">Name</label>
+              <input 
+                type="text"
+                value={editForm.name}
+                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Item name"
+                className="bg-zinc-800 text-white text-sm rounded-xl p-2.5 border border-white/10 outline-none focus:border-cyan-500/50 transition-colors"
+              />
+            </div>
+
+            <div className="flex gap-3 mt-2">
+              <button 
+                onClick={() => setIsEditing(false)}
+                className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-white text-xs font-bold hover:bg-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  setItem(prev => ({ ...prev, ...editForm }));
+                  setIsEditing(false);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-cyan-500 text-black text-xs font-bold hover:bg-cyan-400 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

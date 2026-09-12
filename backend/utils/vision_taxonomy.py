@@ -320,13 +320,15 @@ _CATEGORY_TITLE: dict[str, str] = {
 
 FASHION_HIERARCHY = {
     "top": {
-        "labels": ["crop top", "t-shirt", "long sleeve top", "tank top", "oversized t-shirt", "formal shirt", "cotton kurti", "synthetic kurti", "blouse", "hoodie", "sweatshirt", "sweater", "jacket", "coat", "cardigan"],
+        "labels": ["crop top", "t-shirt", "long sleeve top", "tank top", "oversized t-shirt", "formal shirt", "cotton kurti", "synthetic kurti", "blouse", "hoodie", "sweatshirt", "sweater", "jacket", "coat", "cardigan", "saree", "kurta"],
         "default": "t-shirt",
         "season_map": {
             "crop top": ["summer"], "t-shirt": ["summer", "monsoon"], "long sleeve top": ["summer", "monsoon", "winter", "festive_spring"],
             "tank top": ["summer", "monsoon"], "oversized t-shirt": ["summer", "monsoon"], "formal shirt": ["summer", "monsoon", "festive_spring", "winter"],
             "cotton kurti": ["summer", "festive_spring"], "synthetic kurti": ["monsoon"], "blouse": ["festive_spring", "summer"],
-            "hoodie": ["winter"], "sweatshirt": ["winter"], "sweater": ["winter"], "jacket": ["winter"], "coat": ["winter"], "cardigan": ["winter"]
+            "hoodie": ["winter"], "sweatshirt": ["winter"], "sweater": ["winter"], "jacket": ["winter"], "coat": ["winter"], "cardigan": ["winter"],
+            "saree": ["summer", "monsoon", "festive_spring", "winter"],
+            "kurta": ["summer", "monsoon", "festive_spring", "winter"]
         },
         "occasion_map": {
             "crop top": ["casual", "party_clubbing"], "t-shirt": ["casual", "college_daily", "lounge_sleepwear"],
@@ -335,7 +337,9 @@ FASHION_HIERARCHY = {
             "cotton kurti": ["casual", "college_daily", "festive"], "synthetic kurti": ["casual", "college_daily"],
             "blouse": ["festive", "wedding_heavy", "party_clubbing"], "hoodie": ["casual", "college_daily"],
             "sweatshirt": ["casual", "college_daily", "gym_activewear"], "sweater": ["casual", "office_formal"],
-            "jacket": ["casual", "party_clubbing"], "coat": ["office_formal", "party_clubbing"], "cardigan": ["casual", "office_formal"]
+            "jacket": ["casual", "party_clubbing"], "coat": ["office_formal", "party_clubbing"], "cardigan": ["casual", "office_formal"],
+            "saree": ["festive", "wedding_heavy", "office_formal", "party_clubbing"],
+            "kurta": ["casual", "college_daily", "festive", "office_formal"]
         }
     },
     "bottom": {
@@ -455,3 +459,23 @@ for _cat_key, _cat_data in FASHION_HIERARCHY.items():
     for _lbl in _cat_data["labels"]:
         _ALL_FASHION_LABELS.append(_lbl)
         _LABEL_TO_CATEGORY[_lbl] = _cat_key
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MODEL 2 (EfficientNetB0 TFLite) → TAXONOMY MAPPING
+# Maps the 12 output class names from the custom category classifier to
+# the (category, sub_type) pairs used throughout the pipeline.
+# ──────────────────────────────────────────────────────────────────────────────
+MODEL2_TO_TAXONOMY: dict[str, tuple[str, str]] = {
+    "Dresses":      ("outfit",  "one-piece dress"),
+    "Jeans":        ("bottom",  "straight jeans"),
+    "Kurtas":       ("top",     "kurta"),
+    "Kurtis":       ("top",     "cotton kurti"),
+    "Sarees":       ("top",     "saree"),
+    "Shirts":       ("top",     "formal shirt"),
+    "Shorts":       ("bottom",  "shorts"),
+    "Skirts":       ("bottom",  "skirts"),
+    "Sweatshirts":  ("top",     "sweatshirt"),
+    "Tops":         ("top",     "t-shirt"),
+    "Trousers":     ("bottom",  "formal trousers"),
+    "Tshirts":      ("top",     "t-shirt"),
+}
