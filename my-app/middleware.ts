@@ -1,18 +1,14 @@
 /**
- * middleware.ts — Route protection
- * Redirects unauthenticated users to /login.
- * Public routes: /login, /signup, /api/auth/*, /api/auth/signup
+ * middleware.ts — Route protection (Native Edge Version)
+ * Redirects unauthenticated users to /login using native cookie checks
+ * to bypass Vercel's NextAuth Node Serverless compilation issues.
  */
-import NextAuth from "next-auth";
-import { authConfig } from "@/lib/auth.config";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const { auth } = NextAuth(authConfig);
-
 const PUBLIC_PATHS = ["/login", "/signup"];
 
-export default async function middleware(req: NextRequest) {
+export default function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Always allow API routes, static assets, and public files
@@ -30,19 +26,17 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check session — wrap in try/catch so a DB or auth error
-  // returns NextResponse.next() instead of an HTML error page,
-  // which would cause a "Unexpected token '<'" ClientFetchError.
-  try {
-    const session = await auth();
-    if (!session) {
-      const loginUrl = new URL("/login", req.url);
-      loginUrl.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-  } catch (err) {
-    console.error("[middleware] auth() failed, allowing request through:", err);
-    return NextResponse.next();
+  // Native NextAuth cookie check (bypassing next-auth library import)
+  const token = 
+    req.cookies.get("authjs.session-token") || 
+    req.cookies.get("__Secure-authjs.session-token") ||
+    req.cookies.get("next-auth.session-token") ||
+    req.cookies.get("__Secure-next-auth.session-token");
+    
+  if (!token) {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
