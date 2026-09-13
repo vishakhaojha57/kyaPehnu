@@ -503,7 +503,7 @@ function DetectedItemCard({
               <label className="text-zinc-400 text-[0.65rem] uppercase tracking-wider font-bold">Category</label>
               <select 
                 value={editForm.category.toLowerCase()}
-                onChange={(e) => setEditForm(prev => ({ ...prev, category: e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1) }))}
+                onChange={(e) => setEditForm(prev => ({ ...prev, category: (e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1)) as any }))}
                 className="bg-zinc-800 text-white text-sm rounded-xl p-2.5 border border-white/10 outline-none focus:border-cyan-500/50 transition-colors"
               >
                 <option value="top">Top</option>
