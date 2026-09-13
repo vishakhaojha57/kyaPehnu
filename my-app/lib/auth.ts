@@ -3,8 +3,10 @@ import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "./db";
+import { authConfig } from "./auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   secret: process.env.NEXTAUTH_SECRET,
 
   providers: [
@@ -46,13 +48,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-
-  pages: {
-    signIn: "/login",
-    error:  "/login",
-  },
-
-  session: { strategy: "jwt" },
 
   callbacks: {
     async jwt({ token, user, account }) {
