@@ -164,7 +164,7 @@ export async function GET(): Promise<NextResponse> {
       created_at: row.created_at,
     }));
     
-    return NextResponse.json({ items: mappedItems }, { status: 200 });
+    return NextResponse.json(mappedItems, { status: 200 });
   } catch (err) {
     console.error("[GET /api/wardrobe] DB error:", err);
     return NextResponse.json(

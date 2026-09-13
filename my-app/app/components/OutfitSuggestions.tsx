@@ -98,7 +98,12 @@ export function OutfitCard({
   allItems?: WardrobeItem[];
   onWearToday: (outfit: OutfitSuggestion) => void;
 }) {
-  const [currentItems, setCurrentItems] = useState<WardrobeItem[]>(outfit.items);
+  const [currentItems, setCurrentItems] = useState<WardrobeItem[]>(outfit.items || []);
+
+  // When outfit changes (e.g. refresh), reset current items
+  useEffect(() => {
+    setCurrentItems(outfit.items || []);
+  }, [outfit]);
 
   const handleSwap = (e: React.MouseEvent, targetItemIndex: number) => {
     e.stopPropagation();
