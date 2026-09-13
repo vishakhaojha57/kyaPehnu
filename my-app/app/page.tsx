@@ -258,15 +258,13 @@ export default function Home() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{
-              width: "32px", height: "32px", borderRadius: "9px",
+            <div suppressHydrationWarning style={{
+              width: 32, height: 32, borderRadius: 9,
               overflow: "hidden", flexShrink: 0,
               boxShadow: "0 0 14px rgba(109,40,217,0.45)",
             }}>
-              {mounted && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src="/kyapehnu-icon.png" alt="KyaPehnu" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/kyapehnu-icon.png" alt="KyaPehnu" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             </div>
             <span style={{ fontWeight: 800, fontSize: "1.08rem", letterSpacing: "-0.02em" }}>
               KyaPehnu
