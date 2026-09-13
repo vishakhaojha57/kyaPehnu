@@ -9,9 +9,8 @@ import type {
   RepetitionCheckResponse,
 } from "./types";
 
-const NEXT_API_URL = "";
-const FASTAPI_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const NEXT_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const FASTAPI_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit, userId?: string): Promise<T> {
   const headers: Record<string, string> = {

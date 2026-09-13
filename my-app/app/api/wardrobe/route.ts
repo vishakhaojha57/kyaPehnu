@@ -34,6 +34,7 @@ interface WardrobeItemRow {
   is_favourite: boolean;
   created_at: string;
   updated_at: string;
+  sub_type?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,7 +147,24 @@ export async function GET(): Promise<NextResponse> {
     const result = await db.query<WardrobeItemRow>(
       `SELECT * FROM wardrobe_items ORDER BY created_at DESC`
     );
-    return NextResponse.json({ items: result.rows }, { status: 200 });
+    
+    // Map DB schema to frontend WardrobeItem interface
+    const mappedItems = result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      category: row.category || row.item_type,
+      sub_type: row.sub_type,
+      color: row.hex_color, // Map hex_color to color
+      brand: row.brand,
+      tags: row.tags || [],
+      seasons: row.season ? [row.season] : [], // Wrap singular season in array
+      occasions: [], // DB doesn't have occasions yet, but UI expects array
+      image_url: row.image_url,
+      is_favourite: row.is_favourite,
+      created_at: row.created_at,
+    }));
+    
+    return NextResponse.json({ items: mappedItems }, { status: 200 });
   } catch (err) {
     console.error("[GET /api/wardrobe] DB error:", err);
     return NextResponse.json(
