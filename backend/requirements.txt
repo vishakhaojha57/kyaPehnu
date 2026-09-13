@@ -13,6 +13,6 @@ ai-edge-litert>=2.0.0
 ultralytics>=8.2.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
-
-
-
+cloudinary>=1.36.0
+python-dotenv>=1.0.0
+opencv-python-headless>=4.8.0
