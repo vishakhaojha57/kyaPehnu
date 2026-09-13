@@ -9,7 +9,7 @@ import type {
   RepetitionCheckResponse,
 } from "./types";
 
-const NEXT_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const NEXT_API_URL = "";
 const FASTAPI_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit, userId?: string): Promise<T> {
@@ -96,6 +96,10 @@ export const logOutfitWear = async (
     headers,
     body: JSON.stringify(payload),
   });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to log wear: ${res.status}`);
+  }
   return res.json();
 };
 
@@ -103,6 +107,10 @@ export const getOutfitHistory = async (userId?: string): Promise<OutfitHistoryRe
   const headers: Record<string, string> = {};
   if (userId) headers["X-User-Id"] = userId;
   const res = await fetch(`${FASTAPI_URL}/outfits/history`, { headers });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to fetch history: ${res.status}`);
+  }
   return res.json();
 };
 
@@ -110,6 +118,10 @@ export const deleteOutfitHistory = async (id: string, userId?: string): Promise<
   const headers: Record<string, string> = {};
   if (userId) headers["X-User-Id"] = userId;
   const res = await fetch(`${FASTAPI_URL}/outfits/history/${id}`, { method: "DELETE", headers });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to delete history: ${res.status}`);
+  }
   return res.json();
 };
 
@@ -146,5 +158,9 @@ export const checkRepetition = async (
   if (userId) headers["X-User-Id"] = userId;
   const qs = `?top_id=${encodeURIComponent(topId)}&bottom_id=${encodeURIComponent(bottomId)}`;
   const res = await fetch(`${FASTAPI_URL}/outfits/repetition-check${qs}`, { headers });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Failed to check repetition: ${res.status}`);
+  }
   return res.json();
 };
