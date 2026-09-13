@@ -79,21 +79,57 @@ except Exception as _tflite_err:
     logger.warning("TFLite model unavailable (%s) — category classification disabled.", _tflite_err)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Security Gateway — ViT (unchanged, lightweight usage)
+# Security Gateway — Model 1 TFLite Clothing Classifier
 # ──────────────────────────────────────────────────────────────────────────────
 
-try:
-    from transformers import pipeline as _hf_pipeline
+_MODEL1_TFLITE_PATH = os.path.join(_MODEL_DIR, "model1_clothing_classifier.tflite")
+_MODEL1_INTERPRETER = None
+_MODEL1_INPUT_DETAILS = None
+_MODEL1_OUTPUT_DETAILS = None
+_IS_MODEL1_READY = False
 
-    _SECURITY_CLASSIFIER = _hf_pipeline(
-        task="image-classification",
-        model="google/vit-base-patch16-224",
-        top_k=1,
-    )
-    logger.info("Security Gateway ViT ready.")
-except Exception as sec_err:
-    _SECURITY_CLASSIFIER = None
-    logger.warning("Security Gateway ViT unavailable: %s", sec_err)
+logger.info("Loading Model 1 TFLite clothing classifier...")
+try:
+    _MODEL1_INTERPRETER = _TFLiteInterpreter(model_path=_MODEL1_TFLITE_PATH)
+    _MODEL1_INTERPRETER.allocate_tensors()
+    _MODEL1_INPUT_DETAILS = _MODEL1_INTERPRETER.get_input_details()
+    _MODEL1_OUTPUT_DETAILS = _MODEL1_INTERPRETER.get_output_details()
+    _IS_MODEL1_READY = True
+    
+    m1_input_shape = _MODEL1_INPUT_DETAILS[0]["shape"]
+    logger.info("Model 1 TFLite ready. Input shape: %s", m1_input_shape)
+except Exception as m1_err:
+    logger.warning("Model 1 unavailable (%s) — skipping clothing gate.", m1_err)
+
+
+def _tflite_is_clothing(pil_img: Image.Image) -> bool:
+    """
+    Run Model 1 classifier. score > 0.5 -> non_clothing (False), otherwise clothing (True).
+    """
+    if not _IS_MODEL1_READY:
+        logger.warning("Model 1 unavailable, skipping clothing gate (fail-open)")
+        return True # fail-open
+        
+    try:
+        # Resize to 224x224 as expected by the model
+        img_resized = pil_img.resize((224, 224), Image.LANCZOS)
+        img_arr = np.array(img_resized, dtype=np.float32)
+        img_arr = np.expand_dims(img_arr, axis=0)
+        
+        _MODEL1_INTERPRETER.set_tensor(_MODEL1_INPUT_DETAILS[0]["index"], img_arr)
+        _MODEL1_INTERPRETER.invoke()
+        output = _MODEL1_INTERPRETER.get_tensor(_MODEL1_OUTPUT_DETAILS[0]["index"])
+        
+        # Get the first score
+        score = float(np.ravel(output)[0])
+        logger.info("[LOCAL-PIPELINE] Model 1 non-clothing score: %.3f", score)
+        
+        if score > 0.5:
+            return False
+        return True
+    except Exception as e:
+        logger.warning("[LOCAL-PIPELINE] Model 1 inference failed: %s, skipping clothing gate", e)
+        return True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -151,34 +187,13 @@ async def process_vision_pipeline(image_bytes: bytes) -> dict:
 
     w, h = pil_img.size
 
-    if _SECURITY_CLASSIFIER:
-        try:
-            sec_preds = await asyncio.to_thread(_SECURITY_CLASSIFIER, pil_img)
-            if sec_preds:
-                top_label = sec_preds[0]["label"].lower()
-                whitelist_keywords = [
-                    "shirt", "jean", "coat", "jacket", "suit", "dress", "skirt",
-                    "shoe", "boot", "sneaker", "sandal", "tie", "hat", "cap",
-                    "sweater", "pullover", "hoodie", "glove", "sock", "clothing",
-                    "apparel", "vest", "gown", "pajama", "swim", "bra", "robe",
-                    "trousers", "pants", "belt", "scarf", "accessory", "sunglass",
-                    "cardigan", "poncho", "sweatshirt", "maillot", "jersey", "abaya",
-                    "purse", "bag", "backpack", "wallet", "stole", "apron", "miniskirt",
-                    "overskirt", "sombrero", "cloak", "uniform", "sweatpant", "shorts",
-                    "denim", "t-shirt", "tee", "cargo", "loafer", "moccasin", "clog",
-                    "sari", "saree", "sarong", "kimono", "tunic", "costume", "fabric",
-                    "textile", "pattern", "salwaar", "salwar", "kurta", "kurti", "lehenga",
-                    "dhoti", "churidar", "sherwani", "garment", "outfit", "wear",
-                    "khaki", "military", "pant", "trouser", "lower", "bottom", "jeans",
-                    "pocket", "zipper", "waistband", "ankle", "leg", "fashion", "cloth"
-                ]
-                if not any(kw in top_label for kw in whitelist_keywords):
-                    logger.warning("[LOCAL-PIPELINE] Security Gateway rejected: '%s'", top_label)
-                    return {"status": "error", "message": "no_cloth_found", "detected_items": []}
-                else:
-                    logger.info("[LOCAL-PIPELINE] Security Gateway passed: '%s'", top_label)
-        except Exception as e:
-            logger.warning("[LOCAL-PIPELINE] Security Gateway failed: %s", e)
+    # ── Security Gateway (Model 1) ─────────────
+    is_cloth = await asyncio.to_thread(_tflite_is_clothing, pil_img)
+    if not is_cloth:
+        logger.warning("[LOCAL-PIPELINE] Security Gateway (Model 1) rejected image")
+        return {"status": "error", "message": "no_cloth_found", "detected_items": []}
+    else:
+        logger.info("[LOCAL-PIPELINE] Security Gateway (Model 1) passed")
 
     def _make_b64(img: Image.Image) -> str:
         thumb = img.copy()
