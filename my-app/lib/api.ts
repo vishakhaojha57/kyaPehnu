@@ -88,42 +88,17 @@ export const getOutfitById = (id: string, userId?: string): Promise<OutfitSugges
 export const logOutfitWear = async (
   payload: WearOutfitRequest,
   userId?: string
-): Promise<{ message: string; record: OutfitHistoryRecord }> => {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (userId) headers["X-User-Id"] = userId;
-  const res = await fetch(`${FASTAPI_URL}/outfits/wear`, {
+): Promise<{ message: string; record: OutfitHistoryRecord }> =>
+  request<{ message: string; record: OutfitHistoryRecord }>("/api/outfits/wear", {
     method: "POST",
-    headers,
     body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to log wear: ${res.status}`);
-  }
-  return res.json();
-};
+  }, userId);
 
-export const getOutfitHistory = async (userId?: string): Promise<OutfitHistoryRecord[]> => {
-  const headers: Record<string, string> = {};
-  if (userId) headers["X-User-Id"] = userId;
-  const res = await fetch(`${FASTAPI_URL}/outfits/history`, { headers });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to fetch history: ${res.status}`);
-  }
-  return res.json();
-};
+export const getOutfitHistory = (userId?: string): Promise<OutfitHistoryRecord[]> =>
+  request<OutfitHistoryRecord[]>("/api/outfits/history", { cache: "no-store" }, userId);
 
-export const deleteOutfitHistory = async (id: string, userId?: string): Promise<{ deleted: string }> => {
-  const headers: Record<string, string> = {};
-  if (userId) headers["X-User-Id"] = userId;
-  const res = await fetch(`${FASTAPI_URL}/outfits/history/${id}`, { method: "DELETE", headers });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to delete history: ${res.status}`);
-  }
-  return res.json();
-};
+export const deleteOutfitHistory = (id: string, userId?: string): Promise<{ deleted: string }> =>
+  request<{ deleted: string }>(`/api/outfits/history?id=${id}`, { method: "DELETE" }, userId);
 
 export async function analyzeClothing(file: File, userId?: string): Promise<ConsolidatedVisionResponse> {
   const form = new FormData();
@@ -134,33 +109,25 @@ export async function analyzeClothing(file: File, userId?: string): Promise<Cons
     headers["X-User-Id"] = userId;
   }
 
-  const res = await fetch(`${FASTAPI_URL}/vision/analyze`, {
+  const res = await fetch(`${NEXT_API_URL}/api/vision/analyze`, {
     method: "POST",
     body: form,
     headers,
-    // Do NOT set Content-Type — browser sets it with boundary automatically
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`[${res.status}] /vision/analyze → ${text}`);
+    throw new Error(`[${res.status}] /api/vision/analyze → ${text}`);
   }
 
   return res.json() as Promise<ConsolidatedVisionResponse>;
 }
 
-export const checkRepetition = async (
+export const checkRepetition = (
   topId: string,
   bottomId: string,
   userId?: string
 ): Promise<RepetitionCheckResponse> => {
-  const headers: Record<string, string> = {};
-  if (userId) headers["X-User-Id"] = userId;
   const qs = `?top_id=${encodeURIComponent(topId)}&bottom_id=${encodeURIComponent(bottomId)}`;
-  const res = await fetch(`${FASTAPI_URL}/outfits/repetition-check${qs}`, { headers });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to check repetition: ${res.status}`);
-  }
-  return res.json();
+  return request<RepetitionCheckResponse>(`/api/outfits/repetition-check${qs}`, undefined, userId);
 };
