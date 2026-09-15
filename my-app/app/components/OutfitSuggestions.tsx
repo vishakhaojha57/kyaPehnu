@@ -217,6 +217,7 @@ export function OutfitCard({
               fill
               sizes="(max-width: 768px) 100vw, 33vw"
               className="object-cover transition-transform duration-700 group-hover/item:scale-110 opacity-90 group-hover/item:opacity-100" 
+              priority={index < 4}
             />
           </div>
         ))}
