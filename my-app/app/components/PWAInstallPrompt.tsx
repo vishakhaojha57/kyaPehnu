@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Image from "next/image";
 import { Download, Share, PlusSquare, X, Smartphone, Monitor, CheckCircle2 } from "lucide-react";
 
@@ -17,18 +17,12 @@ export function PWAInstallPrompt() {
   const [isDismissed, setIsDismissed] = useState(false);
   const [installedSuccessfully, setInstalledSuccessfully] = useState(false);
 
+  // Use a ref to track deferredPrompt so the useEffect doesn't re-run on every state change
+  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+
   useEffect(() => {
-    // Register Service Worker
-    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((reg) => {
-          console.log("[KyaPehnu] Service worker registered with scope:", reg.scope);
-        })
-        .catch((err) => {
-          console.warn("[KyaPehnu] Service worker registration error:", err);
-        });
-    }
+    // Service worker registration is handled by @ducanh2912/next-pwa (register: true)
+    // — removed duplicate manual registration that was here previously.
 
     // Check if already in standalone / PWA mode
     const isStandaloneMode =
@@ -50,10 +44,13 @@ export function PWAInstallPrompt() {
     // Capture standard PWA install prompt (Chrome / Edge / Android)
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      const promptEvent = e as BeforeInstallPromptEvent;
+      deferredPromptRef.current = promptEvent;
+      setDeferredPrompt(promptEvent);
     };
 
     const handleAppInstalled = () => {
+      deferredPromptRef.current = null;
       setDeferredPrompt(null);
       setInstalledSuccessfully(true);
       setTimeout(() => setInstalledSuccessfully(false), 5000);
@@ -63,13 +60,18 @@ export function PWAInstallPrompt() {
     window.addEventListener("appinstalled", handleAppInstalled);
 
     // Listen for custom trigger from sidebar or header button
-    const handleCustomTrigger = () => {
-      if (deferredPrompt) {
-        handleInstallClick();
-      } else if (isIosDevice) {
-        setShowIOSModal(true);
+    const handleCustomTrigger = async () => {
+      const prompt = deferredPromptRef.current;
+      if (prompt) {
+        await prompt.prompt();
+        const choice = await prompt.userChoice;
+        if (choice.outcome === "accepted") {
+          setInstalledSuccessfully(true);
+          deferredPromptRef.current = null;
+          setDeferredPrompt(null);
+        }
       } else {
-        setShowIOSModal(true); // show general guidance
+        setShowIOSModal(true);
       }
     };
     window.addEventListener("trigger-pwa-install", handleCustomTrigger);
@@ -79,7 +81,7 @@ export function PWAInstallPrompt() {
       window.removeEventListener("appinstalled", handleAppInstalled);
       window.removeEventListener("trigger-pwa-install", handleCustomTrigger);
     };
-  }, [deferredPrompt]);
+  }, []);
 
   const handleInstallClick = useCallback(async () => {
     if (deferredPrompt) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { getOutfitHistory, deleteOutfitHistory } from "../../lib/api";
 import { type OutfitHistoryRecord } from "../../lib/types";
 import { Trash2, Shirt } from "lucide-react";
@@ -259,8 +260,7 @@ export default function WearHistoryView() {
                     {[record.top_item, record.bottom_item].map((item, idx) => (
                       <div key={idx} className="relative w-[4.5rem] h-[5.5rem] rounded-[14px] overflow-hidden bg-black/20 border border-white/5 flex items-center justify-center">
                         {item?.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
+                          <Image src={item.image_url} alt={item.name} width={72} height={88} className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" />
                         ) : (
                           <div
                             style={{ 

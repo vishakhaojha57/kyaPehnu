@@ -751,11 +751,13 @@ export function WardrobeGrid({
                   onClick={() => onOutfitToggle?.(item)}
                 >
                   {item.image_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={item.image_url}
                       alt={item.name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      width={48}
+                      height={58}
+                      className="object-cover"
+                      style={{ width: "100%", height: "100%" }}
                     />
                   )}
                   {/* Hover Overlay */}

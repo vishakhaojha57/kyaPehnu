@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import type { WardrobeItem, OutfitSuggestion } from "../../lib/types";
 import { type WeatherPayload, weatherToOccasionHints } from "../../lib/weather";
