@@ -217,6 +217,11 @@ export default function Home() {
 
   useEffect(() => {
     if (activeTab === "wardrobe") {
+      // Skip refetch if we already have items loaded (avoids redundant image reloads on tab switch)
+      if (items.length > 0 && !itemsError) {
+        setItemsLoading(false);
+        return;
+      }
       setItemsLoading(true);
       const userId = session?.user?.id;
       getAllItems(userId)

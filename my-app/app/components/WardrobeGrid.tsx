@@ -114,9 +114,13 @@ export function ItemCard({
             src={item.image_url} 
             alt={item.name}
             fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 260px"
             className="object-cover transition-transform duration-500 group-hover:scale-105"
-            priority={index < 12}
+            priority={index < 4}
+            loading={index < 4 ? "eager" : "lazy"}
+            quality={75}
+            placeholder="blur"
+            blurDataURL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjYwIiBoZWlnaHQ9IjMyNSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMWExYTFmIi8+PC9zdmc+"
           />
         )}
         
@@ -759,6 +763,9 @@ export function WardrobeGrid({
                       height={58}
                       className="object-cover"
                       style={{ width: "100%", height: "100%" }}
+                      loading="lazy"
+                      quality={60}
+                      sizes="48px"
                     />
                   )}
                   {/* Hover Overlay */}

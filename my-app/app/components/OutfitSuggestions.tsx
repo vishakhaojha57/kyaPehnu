@@ -215,9 +215,13 @@ export function OutfitCard({
               src={item.image_url || ""} 
               alt={item.name} 
               fill
-              sizes="(max-width: 768px) 100vw, 33vw"
+              sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 160px"
               className="object-cover transition-transform duration-700 group-hover/item:scale-110 opacity-90 group-hover/item:opacity-100" 
-              priority={index < 4}
+              priority={index < 2}
+              loading={index < 2 ? "eager" : "lazy"}
+              quality={75}
+              placeholder="blur"
+              blurDataURL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYwIiBoZWlnaHQ9IjI0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMGEwYTBkIi8+PC9zdmc+"
             />
           </div>
         ))}
