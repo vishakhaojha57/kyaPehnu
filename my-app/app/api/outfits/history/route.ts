@@ -3,6 +3,35 @@ import { auth } from "@/lib/auth";
 
 const FASTAPI_BASE = process.env.FASTAPI_URL ?? "http://localhost:8000";
 
+function optimizeItemPayload(item: any) {
+  if (!item) return item;
+  let optimizedImageUrl = item.image_url;
+  if (optimizedImageUrl) {
+    if (optimizedImageUrl.startsWith("data:image")) {
+      optimizedImageUrl = null;
+    } else if (optimizedImageUrl.includes("res.cloudinary.com") && optimizedImageUrl.includes("/upload/")) {
+      if (!optimizedImageUrl.includes("f_auto")) {
+        optimizedImageUrl = optimizedImageUrl.replace("/upload/", "/upload/f_auto,q_auto,w_400,c_limit/");
+      }
+    }
+  }
+
+  return {
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    sub_type: item.sub_type,
+    color: item.color,
+    brand: item.brand,
+    tags: item.tags ?? [],
+    seasons: item.seasons ?? [],
+    occasions: item.occasions ?? [],
+    image_url: optimizedImageUrl,
+    is_favourite: item.is_favourite,
+    last_worn: item.last_worn,
+  };
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Secure: resolve user ID from server-side session cookie
   const session = await auth();
@@ -18,7 +47,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "FastAPI fetch failed", detail: errText }, { status: res.status });
     }
 
-    const data = await res.json();
+    let data = await res.json();
+    
+    if (Array.isArray(data)) {
+      data = data.map((record: any) => ({
+        ...record,
+        top_item: optimizeItemPayload(record.top_item),
+        bottom_item: optimizeItemPayload(record.bottom_item)
+      }));
+    }
+
     return NextResponse.json(data, { status: 200 });
   } catch (error) {
     return NextResponse.json(

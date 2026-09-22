@@ -260,7 +260,18 @@ export default function WearHistoryView() {
                     {[record.top_item, record.bottom_item].map((item, idx) => (
                       <div key={idx} className="relative w-[4.5rem] h-[5.5rem] rounded-[14px] overflow-hidden bg-black/20 border border-white/5 flex items-center justify-center">
                         {item?.image_url ? (
-                          <Image src={item.image_url} alt={item.name} width={72} height={88} className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" loading="lazy" quality={60} sizes="72px" />
+                          <Image 
+                            src={item.image_url} 
+                            alt={item.name} 
+                            width={72} 
+                            height={88} 
+                            className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-105" 
+                            loading="lazy" 
+                            quality={60} 
+                            sizes="(max-width: 768px) 50vw, 25vw"
+                            placeholder="blur"
+                            blurDataURL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNzIiIGhlaWdodD0iODgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iIzFhMWExZiIvPjwvc3ZnPg=="
+                          />
                         ) : (
                           <div
                             style={{ 
