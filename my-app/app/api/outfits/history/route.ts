@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 const FASTAPI_BASE = process.env.FASTAPI_URL ?? "http://localhost:8000";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const userId = request.headers.get("X-User-Id");
+  // Secure: resolve user ID from server-side session cookie
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
   const headers: Record<string, string> = {};
   if (userId) headers["X-User-Id"] = userId;
 
@@ -26,7 +29,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function DELETE(request: NextRequest): Promise<NextResponse> {
-  const userId = request.headers.get("X-User-Id");
+  // Secure: resolve user ID from server-side session cookie
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
   const headers: Record<string, string> = {};
   if (userId) headers["X-User-Id"] = userId;
 

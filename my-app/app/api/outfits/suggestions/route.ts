@@ -26,6 +26,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { coordsToSeasons, getCircuitBreakerSnapshot } from "@/lib/weather";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 
 // ── GET /api/outfits/suggestions?lat=<lat>&lon=<lon> ─────────────────────────
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -141,6 +142,81 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { status: 500 }
     );
   }
+
+  // --- Anti-Gravity Repetition System: Add Repeat Alerts ---
+  try {
+    const itemIds = new Set<string>();
+    for (const outfit of outfitSuggestions) {
+      if (outfit.items) {
+        for (const item of outfit.items) {
+          if (item.id) itemIds.add(item.id);
+        }
+      }
+    }
+
+    if (itemIds.size > 0) {
+      const idsArray = Array.from(itemIds);
+      
+      const historyRes = await db.query(
+        `SELECT top_item_id, bottom_item_id, worn_date, occasion
+         FROM outfit_history
+         WHERE (top_item_id = ANY($1::uuid[]) OR bottom_item_id = ANY($1::uuid[]))
+           AND worn_date >= NOW() - INTERVAL '7 days'
+           AND (user_id = $2 OR user_id IS NULL)
+         ORDER BY worn_date DESC`,
+        [idsArray, userId]
+      );
+
+      // Create a map for fast lookup
+      const latestWornMap = new Map<string, { days_ago: number, occasion: string }>();
+      
+      const now = new Date();
+      for (const row of historyRes.rows) {
+        const diffTime = Math.abs(now.getTime() - new Date(row.worn_date).getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (row.top_item_id && !latestWornMap.has(row.top_item_id)) {
+          latestWornMap.set(row.top_item_id, { days_ago: diffDays, occasion: row.occasion });
+        }
+        if (row.bottom_item_id && !latestWornMap.has(row.bottom_item_id)) {
+          latestWornMap.set(row.bottom_item_id, { days_ago: diffDays, occasion: row.occasion });
+        }
+      }
+
+      for (const outfit of outfitSuggestions) {
+        let minDaysAgo = Infinity;
+        let recentOccasion = "";
+        
+        if (outfit.items) {
+          for (const item of outfit.items) {
+            const history = latestWornMap.get(item.id);
+            if (history && history.days_ago < minDaysAgo) {
+              minDaysAgo = history.days_ago;
+              recentOccasion = history.occasion || "this occasion";
+            }
+          }
+        }
+        
+        if (minDaysAgo <= 7) {
+          outfit.repeat_alert = {
+            is_repeat: true,
+            days_ago: minDaysAgo,
+            badge_text: `Repeated: Worn ${minDaysAgo} day${minDaysAgo > 1 ? 's' : ''} ago for ${recentOccasion}!`,
+            severity: minDaysAgo <= 3 ? "warning" : "caution"
+          };
+        } else {
+          outfit.repeat_alert = { is_repeat: false };
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[GET /api/outfits/suggestions] Repetition check failed:", err);
+    // Non-blocking fallback
+    for (const outfit of outfitSuggestions) {
+      if (!outfit.repeat_alert) outfit.repeat_alert = { is_repeat: false };
+    }
+  }
+  // -------------------------------------------------------------
 
   // ── Step 4: Return structured success payload ───────────────────────────────
   return NextResponse.json(

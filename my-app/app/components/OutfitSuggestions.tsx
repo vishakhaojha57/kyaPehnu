@@ -200,6 +200,29 @@ export function OutfitCard({
         </div>
       </div>
 
+      {outfit.repeat_alert?.is_repeat && (
+        <div className={`z-10 flex items-center justify-between px-3 py-2 rounded-xl border backdrop-blur-md shadow-sm mt-[-4px] ${
+          outfit.repeat_alert.severity === "warning" 
+            ? "bg-amber-500/10 border-amber-500/20 text-amber-400" 
+            : "bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+        }`}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm leading-none">⚠️</span>
+            <span className="text-[0.7rem] font-medium leading-tight">
+              {outfit.repeat_alert.badge_text}
+            </span>
+          </div>
+          <button 
+            onClick={handleShuffleOutfit}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 hover:bg-white/90 text-white hover:text-black border border-white/10 transition-all text-[0.65rem] font-bold uppercase tracking-wider"
+            title="Replace repeated items"
+          >
+            <RefreshCw size={10} strokeWidth={3} />
+            <span>Shuffle</span>
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-row gap-2 h-[15rem] z-10">
         {currentItems.map((item, idx) => (
           <div key={`${item.id}-${idx}`} className="flex-1 relative rounded-2xl overflow-hidden bg-black/60 border border-white/10 group/item cursor-pointer shadow-inner transition-all duration-500 hover:border-purple-400/40 hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]">

@@ -21,6 +21,13 @@ export interface WardrobeItem {
   last_worn?: string | null;
 }
 
+export interface RepeatAlert {
+  is_repeat: boolean;
+  days_ago?: number;
+  badge_text?: string;
+  severity?: "warning" | "caution";
+}
+
 // ── Mirrors: OutfitSuggestion ────────────────────────────────────────────────
 export interface OutfitSuggestion {
   id: string;
@@ -28,6 +35,7 @@ export interface OutfitSuggestion {
   items: WardrobeItem[];
   confidence_score: number;  // 0.0 – 1.0
   style_note: string;
+  repeat_alert?: RepeatAlert;
 }
 
 // ── Mirrors: WearOutfitRequest ────────────────────────────────────────────────

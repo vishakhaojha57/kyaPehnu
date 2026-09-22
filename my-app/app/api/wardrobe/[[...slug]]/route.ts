@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 const FASTAPI_BASE = process.env.FASTAPI_URL ?? "http://localhost:8000";
 
 async function proxy(request: NextRequest, { params }: { params: Promise<{ slug?: string[] }> }) {
-  const userId = request.headers.get("X-User-Id");
+  // Secure: resolve user ID from server-side session cookie, NOT from client header
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
   const headers: Record<string, string> = {};
   if (userId) headers["X-User-Id"] = userId;
   

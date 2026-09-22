@@ -158,3 +158,15 @@ CREATE TABLE IF NOT EXISTS outfit_items (
   item_id   UUID NOT NULL REFERENCES wardrobe_items    (id) ON DELETE CASCADE,
   PRIMARY KEY (outfit_id, item_id)
 );
+
+-- ── 7. outfit_history table ──────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS outfit_history (
+  id             SERIAL PRIMARY KEY,
+  user_id        TEXT,
+  top_item_id    UUID REFERENCES wardrobe_items(id) ON DELETE CASCADE,
+  bottom_item_id UUID REFERENCES wardrobe_items(id) ON DELETE CASCADE,
+  worn_date      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  occasion       VARCHAR(100),
+  season         VARCHAR(50)
+);

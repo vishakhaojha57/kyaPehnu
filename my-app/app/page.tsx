@@ -29,7 +29,7 @@ import { WearHistory } from "./components/WearHistory";
 import { COLORS, GRADIENTS, TYPOGRAPHY } from "./theme/designSystem";
 
 export default function Home() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
@@ -217,19 +217,19 @@ export default function Home() {
 
   useEffect(() => {
     if (activeTab === "wardrobe") {
-      // Skip refetch if we already have items loaded (avoids redundant image reloads on tab switch)
-      if (items.length > 0 && !itemsError) {
-        setItemsLoading(false);
-        return;
-      }
-      setItemsLoading(true);
+      // CRITICAL: Wait for session to fully resolve before fetching.
+      // Without this guard, the fetch fires with userId=undefined while
+      // the session is still loading, causing FastAPI to return ALL users' items.
+      if (sessionStatus === "loading") return;
+
       const userId = session?.user?.id;
+      setItemsLoading(true);
       getAllItems(userId)
         .then(setItems)
         .catch((e: Error) => setItemsError(e.message))
         .finally(() => setItemsLoading(false));
     }
-  }, [activeTab, session?.user?.id]);
+  }, [activeTab, session?.user?.id, sessionStatus]);
 
   return (
     <main
